@@ -251,13 +251,19 @@ export default function App() {
     if (screen !== 'writing-exam') return
     function handleFullscreenChange() {
       const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement)
-      if (!isFullscreen && screen === 'writing-exam' && timerRunning) {
+      if (!isFullscreen) {
+        setShowExitWarning(true)
+      }
+    }
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
         setShowExitWarning(true)
       }
     }
     function handleVisibilityChange() {
-      // Timer is wall-clock based so it keeps running, just show warning
-      if (document.hidden && screen === 'writing-exam' && timerRunning) {
+      if (document.hidden) {
         setShowExitWarning(true)
       }
     }
@@ -271,11 +277,13 @@ export default function App() {
     document.addEventListener('fullscreenchange', handleFullscreenChange)
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    document.addEventListener('keydown', handleKeyDown, true)
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange)
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      document.removeEventListener('keydown', handleKeyDown, true)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
   }, [screen, timerRunning])
