@@ -116,6 +116,10 @@ export default function App() {
   const [pdfParsing, setPdfParsing] = useState(false)
   const [pdfMsg, setPdfMsg] = useState('')
   const [audioUploading, setAudioUploading] = useState([false,false,false,false])
+  const [htmlUploading, setHtmlUploading] = useState(false)
+  const [htmlMsg, setHtmlMsg] = useState('')
+  const [listeningHtmlUrl, setListeningHtmlUrl] = useState('')
+  const [readingHtmlUrl, setReadingHtmlUrl] = useState('')
 
   // Auth
   const [loginUser, setLoginUser] = useState('')
@@ -134,6 +138,9 @@ export default function App() {
   const [tasks, setTasks] = useState({ task1_instructions: '', task1_image: '', task2_prompt: '', set_name: '' })
   const [ans1, setAns1] = useState('')
   const [ans2, setAns2] = useState('')
+  const ans1Ref = useRef('')
+  const ans2Ref = useRef('')
+  const submittedRef = useRef(false)
   const [writingPart, setWritingPart] = useState(1)
   const [timeLeft, setTimeLeft] = useState(3600)
   const [timerRunning, setTimerRunning] = useState(false)
@@ -225,6 +232,25 @@ export default function App() {
     return () => clearInterval(readTimerRef.current)
   }, [readTimerRunning])
 
+  // Listen for scores from iframe
+  useEffect(() => {
+    function handleMessage(e) {
+      if (e.data && e.data.type === 'IELTS_SCORE') {
+        const { module, score, total } = e.data
+        if (!currentUser) return
+        if (module === 'listening') {
+          supabase.from('listening_submissions').insert({ username: currentUser.username, full_name: currentUser.full_name, answers: {}, score })
+          go('reading-warn')
+        } else if (module === 'reading') {
+          supabase.from('reading_submissions').insert({ username: currentUser.username, full_name: currentUser.full_name, answers: {}, score })
+          goWritingWarn()
+        }
+      }
+    }
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [currentUser])
+
   const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
   const wc = (t) => t ? t.trim().split(/\s+/).filter(Boolean).length : 0
   const go = (s) => { setScreen(s); setError('') }
@@ -311,31 +337,39 @@ export default function App() {
   }
 
   function startWriting() {
-    setAns1(''); setAns2(''); setTimeLeft(3600); setWritingPart(1); setTimerRunning(true); go('writing-exam')
+    setAns1(''); setAns2(''); ans1Ref.current = ''; ans2Ref.current = ''; submittedRef.current = false
+    setTimeLeft(3600); setWritingPart(1); setTimerRunning(true); go('writing-exam')
   }
 
   async function handleWritingSubmit() {
+    if (submittedRef.current) return
+    submittedRef.current = true
     clearInterval(timerRef.current); setTimerRunning(false); setShowConfirm(false)
-    await supabase.from('submissions').insert({ username: currentUser.username, full_name: currentUser.full_name, task1_answer: ans1, task2_answer: ans2 })
+    const t1 = ans1Ref.current || ans1
+    const t2 = ans2Ref.current || ans2
+    const { error } = await supabase.from('submissions').insert({ 
+      username: currentUser.username, 
+      full_name: currentUser.full_name, 
+      task1_answer: t1, 
+      task2_answer: t2 
+    })
+    if (error) {
+      submittedRef.current = false
+      alert('Error saving: ' + error.message + '. Please screenshot your work and send to teacher!')
+      return
+    }
     go('done')
   }
 
   // Listening exam
   async function goListeningWarn() {
-    const { data } = await supabase.from('listening_tests').select('*').eq('id', 1).single()
-    if (!data) return setError('No listening test uploaded yet.')
+    const { data } = await supabase.from('html_tests').select('*').eq('id', 'listening').single()
+    if (!data || (!data.content && !data.url)) return setError('No listening test uploaded yet. Ask your teacher.')
     setListeningData(data); setError(''); go('listening-warn')
   }
 
   function startListening() {
-    setListenSection(0); setListenAnswers({}); setAudioEnded(false); setIsPlaying(false)
     go('listening-exam')
-    setTimeout(() => {
-      if (audioRef.current) {
-        audioRef.current.src = listeningData?.audio1_url || AUDIO_URLS[0]
-        audioRef.current.load()
-      }
-    }, 100)
   }
 
   function playPause() {
@@ -369,13 +403,13 @@ export default function App() {
 
   // Reading exam
   async function goReadingWarn() {
-    const { data } = await supabase.from('reading_tests').select('*').eq('id', 1).single()
-    if (!data) return setError('No reading test uploaded yet.')
+    const { data } = await supabase.from('html_tests').select('*').eq('id', 'reading').single()
+    if (!data || (!data.content && !data.url)) return setError('No reading test uploaded yet. Ask your teacher.')
     setReadingData(data); setError(''); go('reading-warn')
   }
 
   function startReading() {
-    setReadPassage(0); setReadAnswers({}); setReadTimeLeft(3600); setReadTimerRunning(true); go('reading-exam')
+    go('reading-exam')
   }
 
   function setReadAnswer(qNum, val) { setReadAnswers(prev => ({ ...prev, [qNum]: val })) }
@@ -481,8 +515,46 @@ export default function App() {
     setSaveMsg('Section ' + (idx+1) + ' audio uploaded!'); setTimeout(() => setSaveMsg(''), 3000)
   }
 
+  // HTML Upload functions
+  async function uploadHtmlFile(file, module) {
+    if (!file) return
+    setHtmlUploading(true)
+    setHtmlMsg('Uploading ' + module + ' HTML...')
+    const fileName = module + '_' + Date.now() + '.html'
+    const { error } = await supabase.storage.from('html-tests').upload(fileName, file, { upsert: true, contentType: 'text/html' })
+    if (error) {
+      // Try uploading as text
+      const reader = new FileReader()
+      reader.onload = async (e) => {
+        const htmlContent = e.target.result
+        await supabase.from('html_tests').upsert({ id: module, content: htmlContent, updated_at: new Date().toISOString() })
+        setHtmlMsg(module + ' HTML saved successfully!')
+        if (module === 'listening') setListeningHtmlUrl('db')
+        else setReadingHtmlUrl('db')
+        setHtmlUploading(false)
+        setTimeout(() => setHtmlMsg(''), 4000)
+      }
+      reader.readAsText(file)
+      return
+    }
+    const url = 'https://dsitketafrgrcxpncsrb.supabase.co/storage/v1/object/public/html-tests/' + fileName
+    await supabase.from('html_tests').upsert({ id: module, content: null, url: url, updated_at: new Date().toISOString() })
+    if (module === 'listening') setListeningHtmlUrl(url)
+    else setReadingHtmlUrl(url)
+    setHtmlMsg(module + ' HTML uploaded!')
+    setHtmlUploading(false)
+    setTimeout(() => setHtmlMsg(''), 4000)
+  }
+
   // Admin
   async function loadAdmin() {
+    const { data: ht } = await supabase.from('html_tests').select('*')
+    if (ht) {
+      const lh = ht.find(h => h.id === 'listening')
+      const rh = ht.find(h => h.id === 'reading')
+      if (lh) setListeningHtmlUrl(lh.url || 'db')
+      if (rh) setReadingHtmlUrl(rh.url || 'db')
+    }
     const { data: wt } = await supabase.from('tasks').select('*').eq('id', 1).single()
     if (wt) { setAdminSetName(wt.set_name||''); setAdminTask1Text(wt.task1_instructions||''); setAdminTask2(wt.task2_prompt||''); if (wt.task1_image) setImgPreview(wt.task1_image) }
     const { data: lt } = await supabase.from('listening_tests').select('*').eq('id', 1).single()
@@ -750,35 +822,22 @@ export default function App() {
 
       {/* ===== LISTENING EXAM ===== */}
       {screen === 'listening-exam' && (
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          <div style={{ background: '#fff', borderBottom: '1px solid #eee', padding: '10px 1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10 }}>
-            <div className="logo" style={{ fontSize: 15 }}>IELTS Listening</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f5f5f5', padding: '6px 14px', borderRadius: 8 }}>
-              <span style={{ fontSize: 12, color: '#888' }}>Section {listenSection + 1}</span>
-              <button onClick={playPause} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>{isPlaying ? '⏸' : '▶️'}</button>
-              <input type="range" min="0" max="1" step="0.05" value={volume} onChange={e => { setVolume(e.target.value); if (audioRef.current) audioRef.current.volume = e.target.value }} style={{ width: 70 }} />
-              {audioEnded && <span style={{ fontSize: 12, color: '#0F6E56', fontWeight: 500 }}>✓ Done</span>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 13, color: '#888' }}>{Object.keys(listenAnswers).length}/40</span>
-              <button className={`btn btn-sm ${audioEnded ? 'btn-blue' : ''}`} onClick={() => audioEnded && nextListenSection()} style={{ opacity: audioEnded ? 1 : 0.4, cursor: audioEnded ? 'pointer' : 'not-allowed' }}>
-                {listenSection < 3 ? `Next: S${listenSection + 2}` : 'Submit'}
-              </button>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 4, background: '#fff', borderBottom: '1px solid #eee', padding: '8px 1.2rem' }}>
-            {['Section 1', 'Section 2', 'Section 3', 'Section 4'].map((t, i) => (
-              <div key={i} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 13, background: i === listenSection ? '#185FA5' : '#f5f5f5', color: i === listenSection ? '#fff' : '#888' }}>{t}</div>
-            ))}
-          </div>
-          <div style={{ maxWidth: 760, margin: '1.5rem auto', padding: '0 1rem', width: '100%', paddingBottom: '3rem' }}>
-            {!audioEnded && !isPlaying && (
-              <div style={{ background: '#EFF6FF', border: '1px solid #B5D4F4', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#185FA5' }}>
-                Press <strong>▶️</strong> to start Section {listenSection + 1} audio. Answer while listening.
-              </div>
-            )}
-            {renderListenQs(listenSectionData[listenSection])}
-          </div>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#fff', zIndex: 1000 }}>
+          <iframe
+            id="listening-iframe"
+            srcDoc={listeningData?.content || ''}
+            src={listeningData?.url || undefined}
+            style={{ width: '100%', height: '100%', border: 'none' }}
+            onLoad={() => {
+              const iframe = document.getElementById('listening-iframe')
+              if (iframe && iframe.contentDocument) {
+                // Inject score capture
+                const script = iframe.contentDocument.createElement('script')
+                script.textContent = `window.addEventListener('message', function(){});`
+                iframe.contentDocument.body.appendChild(script)
+              }
+            }}
+          />
         </div>
       )}
 
@@ -804,37 +863,13 @@ export default function App() {
 
       {/* ===== READING EXAM ===== */}
       {screen === 'reading-exam' && (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-          <div style={{ background: '#fff', borderBottom: '1px solid #eee', padding: '10px 1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-            <div className="logo" style={{ fontSize: 15 }}>IELTS Reading</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ display: 'flex', gap: 4, background: '#f5f5f5', borderRadius: 8, padding: 3 }}>
-                {['Passage 1','Passage 2','Passage 3'].map((t, i) => (
-                  <button key={i} className={`ptab ${readPassage===i?'on':''}`} onClick={() => setReadPassage(i)}>{t}</button>
-                ))}
-              </div>
-              <div style={{ fontSize: 18, fontWeight: 600, fontFamily: 'monospace', color: readTimerColor }}>{fmt(readTimeLeft)}</div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 13, color: '#888' }}>{Object.keys(readAnswers).length}/40</span>
-              <button className="btn btn-red btn-sm" onClick={() => setShowReadSubmit(true)}>Submit</button>
-            </div>
-          </div>
-          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-            <div style={{ flex: 1, padding: '1.2rem', overflowY: 'auto', borderRight: '1px solid #eee' }}>
-              {readPassages[readPassage] && (
-                <div>
-                  <div style={{ background: '#f5f5f5', padding: '8px 12px', borderRadius: 8, fontSize: 12, marginBottom: 14 }}>
-                    <strong>Passage {readPassage + 1}</strong> — Spend about 20 minutes.
-                  </div>
-                  <div className="passage-text" dangerouslySetInnerHTML={{ __html: readPassages[readPassage].text || '<p>No passage loaded.</p>' }} />
-                </div>
-              )}
-            </div>
-            <div style={{ flex: 1, padding: '1.2rem', overflowY: 'auto' }}>
-              {readPassages[readPassage] && renderReadQs(readPassages[readPassage].questions)}
-            </div>
-          </div>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#fff', zIndex: 1000 }}>
+          <iframe
+            id="reading-iframe"
+            srcDoc={readingData?.content || ''}
+            src={readingData?.url || undefined}
+            style={{ width: '100%', height: '100%', border: 'none' }}
+          />
         </div>
       )}
 
@@ -891,8 +926,8 @@ export default function App() {
               )}
             </div>
             <div style={{ flex: 1, padding: '1rem', display: 'flex', flexDirection: 'column' }}>
-              <textarea value={ans1} onChange={e => setAns1(e.target.value)} placeholder="Write your Task 1 response here..." style={{ flex: 1, fontSize: 14, lineHeight: 1.8, minHeight: 400, display: writingPart === 1 ? 'block' : 'none' }} />
-              <textarea value={ans2} onChange={e => setAns2(e.target.value)} placeholder="Write your Task 2 response here..." style={{ flex: 1, fontSize: 14, lineHeight: 1.8, minHeight: 400, display: writingPart === 2 ? 'block' : 'none' }} />
+              <textarea value={ans1} onChange={e => { setAns1(e.target.value); ans1Ref.current = e.target.value }} placeholder="Write your Task 1 response here..." style={{ flex: 1, fontSize: 14, lineHeight: 1.8, minHeight: 400, display: writingPart === 1 ? 'block' : 'none' }} />
+              <textarea value={ans2} onChange={e => { setAns2(e.target.value); ans2Ref.current = e.target.value }} placeholder="Write your Task 2 response here..." style={{ flex: 1, fontSize: 14, lineHeight: 1.8, minHeight: 400, display: writingPart === 2 ? 'block' : 'none' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 8 }}>
                 <span style={{ color: '#888' }}>Words: {wc(writingPart===1?ans1:ans2)}</span>
                 {writingPart===1 && wc(ans1)<150 && <span style={{ color:'#A32D2D' }}>{150-wc(ans1)} more needed</span>}
@@ -965,94 +1000,58 @@ export default function App() {
           {/* LISTENING TAB */}
           {adminTab === 'listening' && (
             <div className="card" style={{ marginTop: 0 }}>
-              <div style={{ fontWeight: 500, marginBottom: 4 }}>Listening — upload PDF & audio</div>
-
-              {/* PDF Upload */}
-              <div className="sbox">
-                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Step 1 — Upload questions PDF</div>
-                <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>Upload your listening questions PDF. The platform will auto-extract sections and answer key.</div>
-                <label style={{ display: 'inline-block', padding: '8px 16px', background: '#185FA5', color: '#fff', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
-                  {pdfParsing ? 'Extracting...' : 'Upload Listening PDF'}
-                  <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => uploadListeningPDF(e.target.files[0])} disabled={pdfParsing} />
-                </label>
-                {pdfMsg && <div style={{ marginTop: 8, fontSize: 13, color: pdfMsg.startsWith('Error') ? '#A32D2D' : '#0F6E56' }}>{pdfMsg}</div>}
+              <div style={{ fontWeight: 500, marginBottom: 4 }}>Listening — upload HTML file</div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 16, lineHeight: 1.6 }}>
+                Each week: update the 4 audio URLs in your HTML file, then upload it here. Students will see your exact HTML layout.
               </div>
 
-              {/* Audio Upload */}
               <div className="sbox">
-                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Step 2 — Upload audio files (MP3)</div>
+                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Step 1 — Upload MP3 audio files</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   {[{label:'Section 1', url:lA1},{label:'Section 2', url:lA2},{label:'Section 3', url:lA3},{label:'Section 4', url:lA4}].map((a, i) => (
                     <div key={i} style={{ background: '#fff', border: '1px solid #eee', borderRadius: 8, padding: 10 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{a.label}</div>
-                      {a.url && <div style={{ fontSize: 11, color: '#0F6E56', marginBottom: 6, wordBreak: 'break-all' }}>✓ Audio ready</div>}
+                      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{a.label}</div>
+                      {a.url && a.url !== AUDIO_URLS[i] && <div style={{ fontSize: 11, color: '#0F6E56', marginBottom: 4 }}>✓ Custom audio uploaded</div>}
                       <label style={{ display: 'inline-block', padding: '6px 12px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>
                         {audioUploading[i] ? 'Uploading...' : 'Upload MP3'}
                         <input type="file" accept=".mp3,audio/*" style={{ display: 'none' }} onChange={e => uploadAudioFile(e.target.files[0], i)} disabled={audioUploading[i]} />
                       </label>
+                      {a.url && <div style={{ fontSize: 10, color: '#888', marginTop: 4, wordBreak: 'break-all' }}>{a.url}</div>}
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Extracted preview - editable */}
-              <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8, marginTop: 4 }}>Step 3 — Review & fix extracted content</div>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>Check what was extracted below. Fix any mistakes before saving.</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                {[{label:'Section 1 (Q1-10)', val:lS1, set:setLS1},{label:'Section 2 (Q11-20)', val:lS2, set:setLS2},{label:'Section 3 (Q21-30)', val:lS3, set:setLS3},{label:'Section 4 (Q31-40)', val:lS4, set:setLS4}].map((s, i) => (
-                  <div key={i} className="sbox">
-                    <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>{s.label}</div>
-                    <textarea value={s.val} onChange={e => s.set(e.target.value)} style={{ minHeight: 150, fontSize: 12 }} placeholder="Questions will appear here after PDF upload..." />
-                  </div>
-                ))}
-              </div>
               <div className="sbox">
-                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4 }}>Answer key</div>
-                <textarea value={lKey} onChange={e => setLKey(e.target.value)} style={{ minHeight: 100, fontSize: 12 }} placeholder="Answer key will appear here after PDF upload..." />
+                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Step 2 — Upload Listening HTML file</div>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>Open your HTML in Notepad, replace the 4 audio URLs with the ones above, then upload here.</div>
+                {listeningHtmlUrl && <div style={{ fontSize: 12, color: '#0F6E56', marginBottom: 8 }}>✓ Listening HTML is uploaded and ready</div>}
+                <label style={{ display: 'inline-block', padding: '10px 20px', background: '#185FA5', color: '#fff', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
+                  {htmlUploading ? 'Uploading...' : listeningHtmlUrl ? 'Replace Listening HTML' : 'Upload Listening HTML'}
+                  <input type="file" accept=".html" style={{ display: 'none' }} onChange={e => uploadHtmlFile(e.target.files[0], 'listening')} disabled={htmlUploading} />
+                </label>
+                {htmlMsg && <div style={{ marginTop: 8, fontSize: 13, color: '#0F6E56' }}>{htmlMsg}</div>}
               </div>
-              <button className="btn btn-blue" onClick={saveListening} style={{ marginTop: 8 }}>Save listening test</button>
             </div>
           )}
 
           {/* READING TAB */}
           {adminTab === 'reading' && (
             <div className="card" style={{ marginTop: 0 }}>
-              <div style={{ fontWeight: 500, marginBottom: 4 }}>Reading — upload PDF</div>
+              <div style={{ fontWeight: 500, marginBottom: 4 }}>Reading — upload HTML file</div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 16, lineHeight: 1.6 }}>
+                Upload your Reading HTML file each week. Students will see your exact HTML layout.
+              </div>
 
-              {/* PDF Upload */}
               <div className="sbox">
-                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Step 1 — Upload reading PDF</div>
-                <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>Upload your reading test PDF. Passages, questions and answer key will be extracted automatically.</div>
-                <label style={{ display: 'inline-block', padding: '8px 16px', background: '#185FA5', color: '#fff', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
-                  {pdfParsing ? 'Extracting...' : 'Upload Reading PDF'}
-                  <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => uploadReadingPDF(e.target.files[0])} disabled={pdfParsing} />
+                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Upload Reading HTML file</div>
+                {readingHtmlUrl && <div style={{ fontSize: 12, color: '#0F6E56', marginBottom: 8 }}>✓ Reading HTML is uploaded and ready</div>}
+                <label style={{ display: 'inline-block', padding: '10px 20px', background: '#185FA5', color: '#fff', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
+                  {htmlUploading ? 'Uploading...' : readingHtmlUrl ? 'Replace Reading HTML' : 'Upload Reading HTML'}
+                  <input type="file" accept=".html" style={{ display: 'none' }} onChange={e => uploadHtmlFile(e.target.files[0], 'reading')} disabled={htmlUploading} />
                 </label>
-                {pdfMsg && <div style={{ marginTop: 8, fontSize: 13, color: pdfMsg.startsWith('Error') ? '#A32D2D' : '#0F6E56' }}>{pdfMsg}</div>}
+                {htmlMsg && <div style={{ marginTop: 8, fontSize: 13, color: '#0F6E56' }}>{htmlMsg}</div>}
               </div>
-
-              {/* Extracted preview - editable */}
-              <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8, marginTop: 4 }}>Step 2 — Review & fix extracted content</div>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>Check what was extracted. Fix passages, questions or answers before saving.</div>
-              {[
-                {label:'Passage 1 (Q1-13)', t:rP1T, setT:setRP1T, txt:rP1Txt, setTxt:setRP1Txt, q:rP1Q, setQ:setRP1Q},
-                {label:'Passage 2 (Q14-26)', t:rP2T, setT:setRP2T, txt:rP2Txt, setTxt:setRP2Txt, q:rP2Q, setQ:setRP2Q},
-                {label:'Passage 3 (Q27-40)', t:rP3T, setT:setRP3T, txt:rP3Txt, setTxt:setRP3Txt, q:rP3Q, setQ:setRP3Q},
-              ].map((p, i) => (
-                <div key={i} className="sbox">
-                  <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>{p.label}</div>
-                  <label className="lbl" style={{ marginTop: 0 }}>Passage title</label>
-                  <input value={p.t} onChange={e => p.setT(e.target.value)} placeholder="Will be extracted from PDF..." />
-                  <label className="lbl">Passage text</label>
-                  <textarea value={p.txt} onChange={e => p.setTxt(e.target.value)} style={{ minHeight: 140, fontSize: 12 }} placeholder="Will be extracted from PDF..." />
-                  <label className="lbl">Questions</label>
-                  <textarea value={p.q} onChange={e => p.setQ(e.target.value)} style={{ minHeight: 140, fontSize: 12 }} placeholder="Will be extracted from PDF..." />
-                </div>
-              ))}
-              <div className="sbox">
-                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4 }}>Answer key (all 40)</div>
-                <textarea value={rKey} onChange={e => setRKey(e.target.value)} style={{ minHeight: 100, fontSize: 12 }} placeholder="Will be extracted from PDF..." />
-              </div>
-              <button className="btn btn-blue" onClick={saveReading} style={{ marginTop: 8 }}>Save reading test</button>
             </div>
           )}
 
