@@ -349,11 +349,22 @@ export default function App() {
             <button className="btn btn-sm" onClick={logout}>Sign out</button>
           </div>
           <div className="card" style={{ border: '2px solid #185FA5', marginTop: 0 }}>
-            <div style={{ fontWeight: 500, fontSize: 16 }}>Timed writing practice</div>
-            <div style={{ fontSize: 13, color: '#888', marginTop: 4, marginBottom: 6 }} id="set-name-display"></div>
-            <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>Full 60-minute IELTS Writing exam. Task 1 + Task 2. Timer cannot be paused once started.</div>
+            <div style={{ fontWeight: 500, fontSize: 16 }}>Full Mock Test</div>
+            <div style={{ fontSize: 13, color: '#888', marginTop: 4, marginBottom: 8 }} id="set-name-display"></div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Listening 30 min</div>
+              <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
+              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Reading 60 min</div>
+              <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
+              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Writing 60 min</div>
+            </div>
+            <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>Each module starts when you press Start. Complete all three in order.</div>
             {error && <div className="err">{error}</div>}
-            <button className="btn btn-blue" style={{ marginTop: 12 }} onClick={goWarn}>Start timed practice</button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+              <button className="btn btn-blue" style={{ width: 'auto', marginTop: 0 }} onClick={() => window.location.href = '/listening'}>Start Listening</button>
+              <button className="btn" style={{ width: 'auto', marginTop: 0, fontSize: 13 }} onClick={() => window.location.href = '/reading'}>Start Reading only</button>
+              <button className="btn" style={{ width: 'auto', marginTop: 0, fontSize: 13 }} onClick={goWarn}>Start Writing only</button>
+            </div>
           </div>
           <div className="card">
             <div style={{ fontWeight: 500, marginBottom: 10 }}>My submissions</div>
