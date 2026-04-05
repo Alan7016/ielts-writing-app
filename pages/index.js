@@ -374,7 +374,11 @@ export default function App() {
     reader.onload = async (e) => {
       const base64 = e.target.result.split(',')[1]
       try {
-        const res = await fetch('/api/parse-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base64, type: 'listening' }) })
+        const formData = new FormData()
+        formData.append('pdf', file)
+        formData.append('type', 'listening')
+        const res = await fetch('/api/parse-pdf', { method: 'POST', body: formData })
+        if (!res.ok) { setPdfMsg('Server error: ' + res.status); setPdfParsing(false); return }
         const data = await res.json()
         if (data.error) { setPdfMsg('Error: ' + data.error); setPdfParsing(false); return }
         if (data.section1) setLS1(data.section1)
@@ -385,7 +389,7 @@ export default function App() {
           setLKey(Object.entries(data.answerKey).map(([k,v]) => k + '. ' + v).join('\n'))
         }
         setPdfMsg('PDF extracted! Review the sections below and save.')
-      } catch(err) { setPdfMsg('Failed to read PDF. Try again.') }
+      } catch(err) { setPdfMsg('Failed: ' + err.message) }
       setPdfParsing(false)
     }
     reader.readAsDataURL(file)
@@ -398,7 +402,11 @@ export default function App() {
     reader.onload = async (e) => {
       const base64 = e.target.result.split(',')[1]
       try {
-        const res = await fetch('/api/parse-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base64, type: 'reading' }) })
+        const formData = new FormData()
+        formData.append('pdf', file)
+        formData.append('type', 'reading')
+        const res = await fetch('/api/parse-pdf', { method: 'POST', body: formData })
+        if (!res.ok) { setPdfMsg('Server error: ' + res.status); setPdfParsing(false); return }
         const data = await res.json()
         if (data.error) { setPdfMsg('Error: ' + data.error); setPdfParsing(false); return }
         if (data.passages) {
@@ -410,7 +418,7 @@ export default function App() {
           setRKey(Object.entries(data.answerKey).map(([k,v]) => k + '. ' + v).join('\n'))
         }
         setPdfMsg('PDF extracted! Review passages and questions, then save.')
-      } catch(err) { setPdfMsg('Failed to read PDF. Try again.') }
+      } catch(err) { setPdfMsg('Failed: ' + err.message) }
       setPdfParsing(false)
     }
     reader.readAsDataURL(file)
