@@ -4,56 +4,120 @@ import Head from 'next/head'
 
 const ADMIN_USER = 'teacher'
 const ADMIN_PASS = 'ielts2024'
+const AUDIO_URLS = [
+  'https://dsitketafrgrcxpncsrb.supabase.co/storage/v1/object/public/audio/AudioTrack 01.mp3',
+  'https://dsitketafrgrcxpncsrb.supabase.co/storage/v1/object/public/audio/AudioTrack 02.mp3',
+  'https://dsitketafrgrcxpncsrb.supabase.co/storage/v1/object/public/audio/AudioTrack 03.mp3',
+  'https://dsitketafrgrcxpncsrb.supabase.co/storage/v1/object/public/audio/AudioTrack 04.mp3',
+]
+
+function parseAnswerKey(text) {
+  const key = {}
+  if (!text) return key
+  text.split('\n').forEach(line => {
+    const m = line.trim().match(/^(\d+)[.\s:]+(.+)/)
+    if (m) key[m[1]] = m[2].trim()
+  })
+  return key
+}
+
+function parseListeningQuestions(text) {
+  if (!text || !text.trim()) return []
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const questions = []
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    const numMatch = line.match(/^(\d+)[.\s]+(.+)/)
+    if (!numMatch) { i++; continue }
+    const num = parseInt(numMatch[1])
+    const rest = numMatch[2]
+    if (rest.includes('___') || rest.includes('......') || rest.includes('…')) {
+      const full = rest.replace(/_{3,}|\.{4,}|…+/g, '___')
+      const parts = full.split('___')
+      questions.push({ type: 'gap', number: num, before: parts[0]?.trim() || '', after: parts.slice(1).join('').trim() || '' })
+      i++; continue
+    }
+    const opts = []
+    let j = i + 1
+    while (j < lines.length) {
+      const optM = lines[j].match(/^([A-G])[.\s]+(.+)/)
+      if (optM) { opts.push({ letter: optM[1], text: optM[2] }); j++ }
+      else break
+    }
+    if (opts.length >= 2) {
+      questions.push({ type: 'mcq', number: num, question: rest, options: opts })
+      i = j; continue
+    }
+    questions.push({ type: 'gap', number: num, before: rest, after: '' })
+    i++
+  }
+  return questions
+}
+
+function parseReadingQuestions(text) {
+  if (!text || !text.trim()) return []
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const questions = []
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    const numMatch = line.match(/^(\d+)[.\s]+(.+)/)
+    if (!numMatch) { i++; continue }
+    const num = parseInt(numMatch[1])
+    const rest = numMatch[2]
+    if (rest.includes('___') || rest.includes('......') || rest.includes('…')) {
+      const full = rest.replace(/_{3,}|\.{4,}|…+/g, '___')
+      const parts = full.split('___')
+      questions.push({ type: 'gap', number: num, before: parts[0]?.trim() || '', after: parts.slice(1).join('').trim() || '' })
+      i++; continue
+    }
+    const opts = []
+    let j = i + 1
+    while (j < lines.length) {
+      const optM = lines[j].match(/^([A-J])[.\s]+(.+)/)
+      if (optM) { opts.push({ letter: optM[1], text: optM[2] }); j++ }
+      else break
+    }
+    if (opts.length >= 2) {
+      questions.push({ type: 'mcq', number: num, question: rest, options: opts })
+      i = j; continue
+    }
+    questions.push({ type: 'tfng', number: num, statement: rest })
+    i++
+  }
+  return questions
+}
 
 function downloadPDF(sub) {
   const wc = (t) => t ? t.trim().split(/\s+/).filter(Boolean).length : 0
-  const date = new Date(sub.submitted_at).toLocaleString()
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>IELTS Submission - ${sub.full_name}</title>
-<style>
-  body { font-family: Arial, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 2rem; color: #111; }
-  h1 { color: #c00; font-size: 22px; margin-bottom: 4px; }
-  .meta { font-size: 13px; color: #666; margin-bottom: 2rem; border-bottom: 1px solid #eee; padding-bottom: 1rem; }
-  h2 { font-size: 16px; background: #f5f5f5; padding: 8px 12px; border-radius: 4px; margin-top: 2rem; }
-  .wc { font-size: 12px; color: #888; margin: 4px 0 12px; }
-  .answer { font-size: 14px; line-height: 1.8; white-space: pre-wrap; border: 1px solid #eee; padding: 1rem; border-radius: 4px; }
-  @media print { body { margin: 1rem; } }
-</style>
-</head>
-<body>
-<h1>IELTS Writing Practice</h1>
-<div class="meta">
-  <strong>${sub.full_name}</strong> (@${sub.username})<br>
-  Submitted: ${date}
-</div>
-<h2>Task 1</h2>
-<div class="wc">Word count: ${wc(sub.task1_answer)}</div>
-<div class="answer">${sub.task1_answer || '(No answer submitted)'}</div>
-<h2>Task 2</h2>
-<div class="wc">Word count: ${wc(sub.task2_answer)}</div>
-<div class="answer">${sub.task2_answer || '(No answer submitted)'}</div>
-</body>
-</html>`
-
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>IELTS - ${sub.full_name}</title>
+  <style>body{font-family:Arial,sans-serif;max-width:800px;margin:2rem auto;padding:0 2rem;color:#111}h1{color:#c00}h2{background:#f5f5f5;padding:8px 12px;border-radius:4px;margin-top:2rem;font-size:16px}.meta{font-size:13px;color:#666;margin-bottom:2rem;border-bottom:1px solid #eee;padding-bottom:1rem}.wc{font-size:12px;color:#888;margin:4px 0 12px}.answer{font-size:14px;line-height:1.8;white-space:pre-wrap;border:1px solid #eee;padding:1rem;border-radius:4px}@media print{body{margin:1rem}}</style>
+  </head><body>
+  <h1>IELTS Writing Practice</h1>
+  <div class="meta"><strong>${sub.full_name}</strong> (@${sub.username})<br>Submitted: ${new Date(sub.submitted_at).toLocaleString()}</div>
+  <h2>Task 1</h2><div class="wc">Word count: ${wc(sub.task1_answer)}</div><div class="answer">${sub.task1_answer||'(No answer)'}</div>
+  <h2>Task 2</h2><div class="wc">Word count: ${wc(sub.task2_answer)}</div><div class="answer">${sub.task2_answer||'(No answer)'}</div>
+  </body></html>`
   const blob = new Blob([html], { type: 'text/html' })
   const url = URL.createObjectURL(blob)
   const win = window.open(url, '_blank')
-  win.onload = () => {
-    win.print()
-    URL.revokeObjectURL(url)
-  }
+  win.onload = () => { win.print(); URL.revokeObjectURL(url) }
 }
 
 export default function App() {
   const [screen, setScreen] = useState('auth')
   const [authTab, setAuthTab] = useState('login')
+  const [adminTab, setAdminTab] = useState('writing')
   const [currentUser, setCurrentUser] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [saveMsg, setSaveMsg] = useState('')
+  const [pdfParsing, setPdfParsing] = useState(false)
+  const [pdfMsg, setPdfMsg] = useState('')
+  const [audioUploading, setAudioUploading] = useState([false,false,false,false])
 
+  // Auth
   const [loginUser, setLoginUser] = useState('')
   const [loginPass, setLoginPass] = useState('')
   const [regName, setRegName] = useState('')
@@ -63,62 +127,109 @@ export default function App() {
   const [adminUser, setAdminUser] = useState('')
   const [adminPass, setAdminPass] = useState('')
 
+  // Student
   const [mySubs, setMySubs] = useState([])
 
+  // Writing exam
   const [tasks, setTasks] = useState({ task1_instructions: '', task1_image: '', task2_prompt: '', set_name: '' })
   const [ans1, setAns1] = useState('')
   const [ans2, setAns2] = useState('')
-  const [part, setPart] = useState(1)
+  const [writingPart, setWritingPart] = useState(1)
   const [timeLeft, setTimeLeft] = useState(3600)
   const [timerRunning, setTimerRunning] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const timerRef = useRef(null)
 
+  // Listening exam
+  const [listeningData, setListeningData] = useState(null)
+  const [listenSection, setListenSection] = useState(0)
+  const [listenAnswers, setListenAnswers] = useState({})
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [audioEnded, setAudioEnded] = useState(false)
+  const [volume, setVolume] = useState(1)
+  const [showListenSubmit, setShowListenSubmit] = useState(false)
+  const audioRef = useRef(null)
+
+  // Reading exam
+  const [readingData, setReadingData] = useState(null)
+  const [readPassage, setReadPassage] = useState(0)
+  const [readAnswers, setReadAnswers] = useState({})
+  const [readTimeLeft, setReadTimeLeft] = useState(3600)
+  const [readTimerRunning, setReadTimerRunning] = useState(false)
+  const [showReadSubmit, setShowReadSubmit] = useState(false)
+  const readTimerRef = useRef(null)
+
+  // Admin - Writing
   const [adminSetName, setAdminSetName] = useState('')
   const [adminTask1Img, setAdminTask1Img] = useState('')
   const [adminTask1Text, setAdminTask1Text] = useState('')
   const [adminTask2, setAdminTask2] = useState('')
   const [imgPreview, setImgPreview] = useState('')
+
+  // Admin - Listening
+  const [lS1, setLS1] = useState('')
+  const [lS2, setLS2] = useState('')
+  const [lS3, setLS3] = useState('')
+  const [lS4, setLS4] = useState('')
+  const [lKey, setLKey] = useState('')
+  const [lA1, setLA1] = useState(AUDIO_URLS[0])
+  const [lA2, setLA2] = useState(AUDIO_URLS[1])
+  const [lA3, setLA3] = useState(AUDIO_URLS[2])
+  const [lA4, setLA4] = useState(AUDIO_URLS[3])
+
+  // Admin - Reading
+  const [rP1T, setRP1T] = useState('')
+  const [rP1Txt, setRP1Txt] = useState('')
+  const [rP1Q, setRP1Q] = useState('')
+  const [rP2T, setRP2T] = useState('')
+  const [rP2Txt, setRP2Txt] = useState('')
+  const [rP2Q, setRP2Q] = useState('')
+  const [rP3T, setRP3T] = useState('')
+  const [rP3Txt, setRP3Txt] = useState('')
+  const [rP3Q, setRP3Q] = useState('')
+  const [rKey, setRKey] = useState('')
+
+  // Admin - Submissions
   const [students, setStudents] = useState([])
-  const [allSubs, setAllSubs] = useState([])
-  const [saveMsg, setSaveMsg] = useState('')
+  const [writingSubs, setWritingSubs] = useState([])
+  const [listeningSubs, setListeningSubs] = useState([])
+  const [readingSubs, setReadingSubs] = useState([])
 
   useEffect(() => {
     const saved = localStorage.getItem('ielts_user')
     if (saved) {
       const user = JSON.parse(saved)
       setCurrentUser(user)
-      if (user.isAdmin) {
-        loadAdmin()
-        setScreen('admin')
-      } else {
-        loadMySubs(user.username)
-        setScreen('home')
-      }
+      if (user.isAdmin) { loadAdmin(); setScreen('admin') }
+      else { loadMySubs(user.username); setScreen('home') }
     }
   }, [])
 
+  // Writing timer
   useEffect(() => {
     if (timerRunning) {
       timerRef.current = setInterval(() => {
-        setTimeLeft(t => {
-          if (t <= 1) {
-            clearInterval(timerRef.current)
-            setTimerRunning(false)
-            handleSubmit()
-            return 0
-          }
-          return t - 1
-        })
+        setTimeLeft(t => { if (t <= 1) { clearInterval(timerRef.current); setTimerRunning(false); handleWritingSubmit(); return 0 } return t - 1 })
       }, 1000)
     }
     return () => clearInterval(timerRef.current)
   }, [timerRunning])
 
+  // Reading timer
+  useEffect(() => {
+    if (readTimerRunning) {
+      readTimerRef.current = setInterval(() => {
+        setReadTimeLeft(t => { if (t <= 1) { clearInterval(readTimerRef.current); setReadTimerRunning(false); submitReading(); return 0 } return t - 1 })
+      }, 1000)
+    }
+    return () => clearInterval(readTimerRef.current)
+  }, [readTimerRunning])
+
   const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
   const wc = (t) => t ? t.trim().split(/\s+/).filter(Boolean).length : 0
   const go = (s) => { setScreen(s); setError('') }
 
+  // Auth
   async function doRegister() {
     setError('')
     if (!regName || !regUser || !regPass) return setError('Please fill all fields.')
@@ -129,45 +240,36 @@ export default function App() {
     if (existing) { setLoading(false); return setError('Username already taken.') }
     const { error: err } = await supabase.from('users').insert({ username: regUser.toLowerCase(), full_name: regName, password: regPass })
     setLoading(false)
-    if (err) return setError('Error creating account. Try again.')
-    setCurrentUser({ username: regUser.toLowerCase(), full_name: regName })
-    localStorage.setItem('ielts_user', JSON.stringify({ username: regUser.toLowerCase(), full_name: regName }))
-    await loadMySubs(regUser.toLowerCase())
-    go('home')
+    if (err) return setError('Error creating account.')
+    const u = { username: regUser.toLowerCase(), full_name: regName }
+    setCurrentUser(u); localStorage.setItem('ielts_user', JSON.stringify(u))
+    await loadMySubs(u.username); go('home')
   }
 
   async function doLogin() {
-    setError('')
-    setLoading(true)
+    setError(''); setLoading(true)
     const { data, error: err } = await supabase.from('users').select('*').eq('username', loginUser.toLowerCase()).eq('password', loginPass).single()
     setLoading(false)
     if (err || !data) return setError('Incorrect username or password.')
-    setCurrentUser({ username: data.username, full_name: data.full_name })
-    localStorage.setItem('ielts_user', JSON.stringify({ username: data.username, full_name: data.full_name }))
-    await loadMySubs(data.username)
-    go('home')
+    const u = { username: data.username, full_name: data.full_name }
+    setCurrentUser(u); localStorage.setItem('ielts_user', JSON.stringify(u))
+    await loadMySubs(u.username); go('home')
   }
 
   function doAdminLogin() {
     setError('')
     if (adminUser === ADMIN_USER && adminPass === ADMIN_PASS) {
-      const user = { username: ADMIN_USER, full_name: 'Teacher', isAdmin: true }
-      setCurrentUser(user)
-      localStorage.setItem('ielts_user', JSON.stringify(user))
-      loadAdmin()
-      go('admin')
-    } else {
-      setError('Incorrect admin credentials.')
-    }
+      const u = { username: ADMIN_USER, full_name: 'Teacher', isAdmin: true }
+      setCurrentUser(u); localStorage.setItem('ielts_user', JSON.stringify(u))
+      loadAdmin(); go('admin')
+    } else setError('Incorrect admin credentials.')
   }
 
   function logout() {
-    clearInterval(timerRef.current)
-    setTimerRunning(false)
-    setCurrentUser(null)
-    localStorage.removeItem('ielts_user')
-    setAns1(''); setAns2('')
-    go('auth')
+    clearInterval(timerRef.current); clearInterval(readTimerRef.current)
+    setTimerRunning(false); setReadTimerRunning(false)
+    setCurrentUser(null); localStorage.removeItem('ielts_user')
+    setAns1(''); setAns2(''); go('auth')
   }
 
   async function loadMySubs(username) {
@@ -175,140 +277,334 @@ export default function App() {
     setMySubs(data || [])
   }
 
-  async function goWarn() {
+  // Writing exam
+  async function goWritingWarn() {
     const { data } = await supabase.from('tasks').select('*').eq('id', 1).single()
-    if (!data || (!data.task1_instructions && !data.task2_prompt)) {
-      return setError('No tasks uploaded yet. Ask your teacher to add tasks first.')
-    }
-    setTasks(data)
-    setError('')
-    const el = document.getElementById('set-name-display')
-    if (el && data.set_name) el.textContent = data.set_name
-    go('warn')
+    if (!data || (!data.task1_instructions && !data.task2_prompt)) return setError('No writing tasks uploaded yet.')
+    setTasks(data); setError(''); go('writing-warn')
   }
 
-  function startExam() {
-    setAns1(''); setAns2('')
-    setTimeLeft(3600)
-    setPart(1)
-    setTimerRunning(true)
-    go('exam')
+  function startWriting() {
+    setAns1(''); setAns2(''); setTimeLeft(3600); setWritingPart(1); setTimerRunning(true); go('writing-exam')
   }
 
-  async function handleSubmit() {
-    clearInterval(timerRef.current)
-    setTimerRunning(false)
-    setShowConfirm(false)
-    await supabase.from('submissions').insert({
-      username: currentUser.username,
-      full_name: currentUser.full_name,
-      task1_answer: ans1,
-      task2_answer: ans2
-    })
+  async function handleWritingSubmit() {
+    clearInterval(timerRef.current); setTimerRunning(false); setShowConfirm(false)
+    await supabase.from('submissions').insert({ username: currentUser.username, full_name: currentUser.full_name, task1_answer: ans1, task2_answer: ans2 })
     go('done')
   }
 
-  async function loadAdmin() {
-    const { data: t } = await supabase.from('tasks').select('*').eq('id', 1).single()
-    if (t) {
-      setAdminSetName(t.set_name || '')
-      setAdminTask1Text(t.task1_instructions || '')
-      setAdminTask2(t.task2_prompt || '')
-      if (t.task1_image) setImgPreview(t.task1_image)
-    }
-    const { data: u } = await supabase.from('users').select('*').order('created_at', { ascending: false })
-    setStudents(u || [])
-    const { data: s } = await supabase.from('submissions').select('*').order('submitted_at', { ascending: false })
-    setAllSubs(s || [])
+  // Listening exam
+  async function goListeningWarn() {
+    const { data } = await supabase.from('listening_tests').select('*').eq('id', 1).single()
+    if (!data) return setError('No listening test uploaded yet.')
+    setListeningData(data); setError(''); go('listening-warn')
   }
 
-  function handleImgUpload(e) {
-    const file = e.target.files[0]
+  function startListening() {
+    setListenSection(0); setListenAnswers({}); setAudioEnded(false); setIsPlaying(false)
+    go('listening-exam')
+    setTimeout(() => {
+      if (audioRef.current) {
+        audioRef.current.src = listeningData?.audio1_url || AUDIO_URLS[0]
+        audioRef.current.load()
+      }
+    }, 100)
+  }
+
+  function playPause() {
+    if (!audioRef.current) return
+    if (isPlaying) { audioRef.current.pause(); setIsPlaying(false) }
+    else { audioRef.current.play(); setIsPlaying(true) }
+  }
+
+  function nextListenSection() {
+    if (listenSection < 3) {
+      const next = listenSection + 1
+      setListenSection(next); setAudioEnded(false); setIsPlaying(false)
+      const urls = [listeningData?.audio1_url, listeningData?.audio2_url, listeningData?.audio3_url, listeningData?.audio4_url]
+      if (audioRef.current) { audioRef.current.src = urls[next] || AUDIO_URLS[next]; audioRef.current.load() }
+    } else setShowListenSubmit(true)
+  }
+
+  function setListenAnswer(qNum, val) { setListenAnswers(prev => ({ ...prev, [qNum]: val })) }
+
+  async function submitListening() {
+    setShowListenSubmit(false)
+    const key = listeningData?.answer_key || {}
+    let score = 0
+    Object.entries(key).forEach(([q, correct]) => {
+      const ua = listenAnswers[q]
+      if (ua && ua.trim().toLowerCase() === String(correct).trim().toLowerCase()) score++
+    })
+    await supabase.from('listening_submissions').insert({ username: currentUser.username, full_name: currentUser.full_name, answers: listenAnswers, score })
+    goReadingWarn()
+  }
+
+  // Reading exam
+  async function goReadingWarn() {
+    const { data } = await supabase.from('reading_tests').select('*').eq('id', 1).single()
+    if (!data) return setError('No reading test uploaded yet.')
+    setReadingData(data); setError(''); go('reading-warn')
+  }
+
+  function startReading() {
+    setReadPassage(0); setReadAnswers({}); setReadTimeLeft(3600); setReadTimerRunning(true); go('reading-exam')
+  }
+
+  function setReadAnswer(qNum, val) { setReadAnswers(prev => ({ ...prev, [qNum]: val })) }
+
+  async function submitReading() {
+    clearInterval(readTimerRef.current); setReadTimerRunning(false); setShowReadSubmit(false)
+    const key = readingData?.answer_key || {}
+    let score = 0
+    Object.entries(key).forEach(([q, correct]) => {
+      const ua = readAnswers[q]
+      if (ua && ua.trim().toLowerCase() === String(correct).trim().toLowerCase()) score++
+    })
+    await supabase.from('reading_submissions').insert({ username: currentUser.username, full_name: currentUser.full_name, answers: readAnswers, score })
+    goWritingWarn()
+  }
+
+  // PDF upload handlers
+  async function uploadListeningPDF(file) {
     if (!file) return
+    setPdfParsing(true); setPdfMsg('Reading PDF...')
     const reader = new FileReader()
-    reader.onload = (ev) => {
-      setAdminTask1Img(ev.target.result)
-      setImgPreview(ev.target.result)
+    reader.onload = async (e) => {
+      const base64 = e.target.result.split(',')[1]
+      try {
+        const res = await fetch('/api/parse-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base64, type: 'listening' }) })
+        const data = await res.json()
+        if (data.error) { setPdfMsg('Error: ' + data.error); setPdfParsing(false); return }
+        if (data.section1) setLS1(data.section1)
+        if (data.section2) setLS2(data.section2)
+        if (data.section3) setLS3(data.section3)
+        if (data.section4) setLS4(data.section4)
+        if (data.answerKey && Object.keys(data.answerKey).length > 0) {
+          setLKey(Object.entries(data.answerKey).map(([k,v]) => k + '. ' + v).join('\n'))
+        }
+        setPdfMsg('PDF extracted! Review the sections below and save.')
+      } catch(err) { setPdfMsg('Failed to read PDF. Try again.') }
+      setPdfParsing(false)
     }
     reader.readAsDataURL(file)
   }
 
-  async function saveTasks() {
-    const imgToSave = adminTask1Img || imgPreview
-    await supabase.from('tasks').upsert({
-      id: 1,
-      set_name: adminSetName,
-      task1_instructions: adminTask1Text,
-      task1_image: imgToSave,
-      task2_prompt: adminTask2,
-      updated_at: new Date().toISOString()
+  async function uploadReadingPDF(file) {
+    if (!file) return
+    setPdfParsing(true); setPdfMsg('Reading PDF...')
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const base64 = e.target.result.split(',')[1]
+      try {
+        const res = await fetch('/api/parse-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base64, type: 'reading' }) })
+        const data = await res.json()
+        if (data.error) { setPdfMsg('Error: ' + data.error); setPdfParsing(false); return }
+        if (data.passages) {
+          setRP1T(data.passages[0]?.title || ''); setRP1Txt(data.passages[0]?.text || ''); setRP1Q(data.passages[0]?.questions || '')
+          setRP2T(data.passages[1]?.title || ''); setRP2Txt(data.passages[1]?.text || ''); setRP2Q(data.passages[1]?.questions || '')
+          setRP3T(data.passages[2]?.title || ''); setRP3Txt(data.passages[2]?.text || ''); setRP3Q(data.passages[2]?.questions || '')
+        }
+        if (data.answerKey && Object.keys(data.answerKey).length > 0) {
+          setRKey(Object.entries(data.answerKey).map(([k,v]) => k + '. ' + v).join('\n'))
+        }
+        setPdfMsg('PDF extracted! Review passages and questions, then save.')
+      } catch(err) { setPdfMsg('Failed to read PDF. Try again.') }
+      setPdfParsing(false)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  async function uploadAudioFile(file, idx) {
+    if (!file) return
+    const upd = [...audioUploading]; upd[idx] = true; setAudioUploading(upd)
+    const fileName = 'section' + (idx+1) + '_' + Date.now() + '.mp3'
+    const { error } = await supabase.storage.from('audio').upload(fileName, file, { upsert: true, contentType: 'audio/mpeg' })
+    const upd2 = [...audioUploading]; upd2[idx] = false; setAudioUploading(upd2)
+    if (error) { setSaveMsg('Audio upload failed: ' + error.message); return }
+    const url = 'https://dsitketafrgrcxpncsrb.supabase.co/storage/v1/object/public/audio/' + fileName;
+    [setLA1,setLA2,setLA3,setLA4][idx](url)
+    setSaveMsg('Section ' + (idx+1) + ' audio uploaded!'); setTimeout(() => setSaveMsg(''), 3000)
+  }
+
+  // Admin
+  async function loadAdmin() {
+    const { data: wt } = await supabase.from('tasks').select('*').eq('id', 1).single()
+    if (wt) { setAdminSetName(wt.set_name||''); setAdminTask1Text(wt.task1_instructions||''); setAdminTask2(wt.task2_prompt||''); if (wt.task1_image) setImgPreview(wt.task1_image) }
+    const { data: lt } = await supabase.from('listening_tests').select('*').eq('id', 1).single()
+    if (lt) { setLA1(lt.audio1_url||AUDIO_URLS[0]); setLA2(lt.audio2_url||AUDIO_URLS[1]); setLA3(lt.audio3_url||AUDIO_URLS[2]); setLA4(lt.audio4_url||AUDIO_URLS[3]) }
+    const { data: rt } = await supabase.from('reading_tests').select('*').eq('id', 1).single()
+    if (rt) { setRP1T(rt.passage1_title||''); setRP1Txt(rt.passage1_text||''); setRP2T(rt.passage2_title||''); setRP2Txt(rt.passage2_text||''); setRP3T(rt.passage3_title||''); setRP3Txt(rt.passage3_text||'') }
+    const { data: u } = await supabase.from('users').select('*').order('created_at', { ascending: false })
+    setStudents(u||[])
+    const { data: ws } = await supabase.from('submissions').select('*').order('submitted_at', { ascending: false })
+    setWritingSubs(ws||[])
+    const { data: ls } = await supabase.from('listening_submissions').select('*').order('submitted_at', { ascending: false })
+    setListeningSubs(ls||[])
+    const { data: rs } = await supabase.from('reading_submissions').select('*').order('submitted_at', { ascending: false })
+    setReadingSubs(rs||[])
+  }
+
+  function handleImgUpload(e) {
+    const file = e.target.files[0]; if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => { setAdminTask1Img(ev.target.result); setImgPreview(ev.target.result) }
+    reader.readAsDataURL(file)
+  }
+
+  async function saveWritingTasks() {
+    await supabase.from('tasks').upsert({ id: 1, set_name: adminSetName, task1_instructions: adminTask1Text, task1_image: adminTask1Img||imgPreview, task2_prompt: adminTask2, updated_at: new Date().toISOString() })
+    setSaveMsg('Writing saved!'); setTimeout(() => setSaveMsg(''), 3000)
+  }
+
+  async function saveListening() {
+    const s1 = parseListeningQuestions(lS1), s2 = parseListeningQuestions(lS2)
+    const s3 = parseListeningQuestions(lS3), s4 = parseListeningQuestions(lS4)
+    const key = parseAnswerKey(lKey)
+    await supabase.from('listening_tests').upsert({ id: 1, section1_questions: s1, section2_questions: s2, section3_questions: s3, section4_questions: s4, answer_key: key, audio1_url: lA1, audio2_url: lA2, audio3_url: lA3, audio4_url: lA4, updated_at: new Date().toISOString() })
+    setSaveMsg(`Listening saved! S1:${s1.length} S2:${s2.length} S3:${s3.length} S4:${s4.length} Qs, ${Object.keys(key).length} answers`); setTimeout(() => setSaveMsg(''), 5000)
+  }
+
+  async function saveReading() {
+    const p1q = parseReadingQuestions(rP1Q), p2q = parseReadingQuestions(rP2Q), p3q = parseReadingQuestions(rP3Q)
+    const key = parseAnswerKey(rKey)
+    await supabase.from('reading_tests').upsert({ id: 1, passage1_title: rP1T, passage1_text: rP1Txt, passage1_questions: p1q, passage2_title: rP2T, passage2_text: rP2Txt, passage2_questions: p2q, passage3_title: rP3T, passage3_text: rP3Txt, passage3_questions: p3q, answer_key: key, updated_at: new Date().toISOString() })
+    setSaveMsg(`Reading saved! P1:${p1q.length} P2:${p2q.length} P3:${p3q.length} Qs, ${Object.keys(key).length} answers`); setTimeout(() => setSaveMsg(''), 5000)
+  }
+
+  // Question renderers
+  function renderListenQs(questions) {
+    if (!questions?.length) return <div style={{ color: '#888', fontSize: 14 }}>No questions loaded.</div>
+    return questions.map((q, i) => {
+      if (q.type === 'gap') return (
+        <div key={i} style={{ marginBottom: 14, fontSize: 14, lineHeight: 1.8 }}>
+          <strong>{q.number}.</strong> {q.before} <input type="text" value={listenAnswers[q.number]||''} onChange={e => setListenAnswer(q.number, e.target.value)} style={{ display:'inline-block', width:140, padding:'3px 8px', border:'1px solid #ddd', borderRadius:4, fontSize:14, margin:'0 6px' }} placeholder="..." /> {q.after}
+        </div>
+      )
+      if (q.type === 'mcq') return (
+        <div key={i} style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 8 }}><strong>{q.number}.</strong> {q.question}</div>
+          {q.options?.map((o, j) => (
+            <label key={j} style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:6, cursor:'pointer', fontSize:14 }}>
+              <input type="radio" name={`lq${q.number}`} value={o.letter} checked={listenAnswers[q.number]===o.letter} onChange={() => setListenAnswer(q.number, o.letter)} style={{ marginTop:3 }} />
+              <span><strong>{o.letter}</strong> {o.text}</span>
+            </label>
+          ))}
+        </div>
+      )
+      return null
     })
-    setSaveMsg('Tasks saved!')
-    setTimeout(() => setSaveMsg(''), 3000)
+  }
+
+  function renderReadQs(questions) {
+    if (!questions?.length) return <div style={{ color: '#888', fontSize: 14 }}>No questions loaded.</div>
+    return questions.map((q, i) => {
+      if (q.type === 'gap') return (
+        <div key={i} style={{ marginBottom: 14, fontSize: 14, lineHeight: 1.8 }}>
+          <strong>{q.number}.</strong> {q.before} <input type="text" value={readAnswers[q.number]||''} onChange={e => setReadAnswer(q.number, e.target.value)} style={{ display:'inline-block', width:140, padding:'3px 8px', border:'1px solid #ddd', borderRadius:4, fontSize:14, margin:'0 6px' }} placeholder="..." /> {q.after}
+        </div>
+      )
+      if (q.type === 'tfng') return (
+        <div key={i} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 14, marginBottom: 6 }}><strong>{q.number}.</strong> {q.statement}</div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            {['TRUE','FALSE','NOT GIVEN'].map(opt => (
+              <button key={opt} onClick={() => setReadAnswer(q.number, opt)} style={{ padding:'5px 12px', border:'1px solid', borderRadius:6, fontSize:13, cursor:'pointer', borderColor: readAnswers[q.number]===opt?'#185FA5':'#ddd', background: readAnswers[q.number]===opt?'#185FA5':'#fff', color: readAnswers[q.number]===opt?'#fff':'#111' }}>{opt}</button>
+            ))}
+          </div>
+        </div>
+      )
+      if (q.type === 'mcq') return (
+        <div key={i} style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 8 }}><strong>{q.number}.</strong> {q.question}</div>
+          {q.options?.map((o, j) => (
+            <label key={j} style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:6, cursor:'pointer', fontSize:14 }}>
+              <input type="radio" name={`rq${q.number}`} value={o.letter} checked={readAnswers[q.number]===o.letter} onChange={() => setReadAnswer(q.number, o.letter)} style={{ marginTop:3 }} />
+              <span><strong>{o.letter}</strong> {o.text}</span>
+            </label>
+          ))}
+        </div>
+      )
+      if (q.type === 'para_match') return (
+        <div key={i} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 14, marginBottom: 6 }}><strong>{q.number}.</strong> {q.statement}</div>
+          <select value={readAnswers[q.number]||''} onChange={e => setReadAnswer(q.number, e.target.value)} style={{ padding:'6px 10px', border:'1px solid #ddd', borderRadius:4, fontSize:14, maxWidth:200 }}>
+            <option value="">Paragraph...</option>
+            {['A','B','C','D','E','F','G','H'].map(l => <option key={l} value={l}>{l}</option>)}
+          </select>
+        </div>
+      )
+      return null
+    })
   }
 
   const timerColor = timeLeft <= 300 ? '#c00' : '#185FA5'
+  const readTimerColor = readTimeLeft <= 600 ? '#c00' : '#185FA5'
+  const listenSectionData = listeningData ? [listeningData.section1_questions, listeningData.section2_questions, listeningData.section3_questions, listeningData.section4_questions] : []
+  const readPassages = readingData ? [
+    { title: readingData.passage1_title, text: readingData.passage1_text, questions: readingData.passage1_questions },
+    { title: readingData.passage2_title, text: readingData.passage2_text, questions: readingData.passage2_questions },
+    { title: readingData.passage3_title, text: readingData.passage3_text, questions: readingData.passage3_questions },
+  ] : []
 
   return (
     <>
-      <Head>
-        <title>IELTS Writing Practice</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-      </Head>
+      <Head><title>IELTS Practice</title><meta name="viewport" content="width=device-width, initial-scale=1" /></Head>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #111; font-size: 15px; }
-        input, textarea { width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; background: #fff; color: #111; resize: vertical; }
-        input:focus, textarea:focus { outline: none; border-color: #185FA5; }
+        input, textarea, select { width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; background: #fff; color: #111; resize: vertical; }
+        input:focus, textarea:focus, select:focus { outline: none; border-color: #185FA5; }
         .btn { padding: 10px 20px; border: 1px solid #ddd; border-radius: 8px; background: #fff; color: #111; font-size: 14px; cursor: pointer; font-family: inherit; display: block; width: 100%; margin-top: 10px; }
         .btn:hover { background: #f0f0f0; }
         .btn-blue { background: #185FA5; color: #fff; border-color: #185FA5; }
         .btn-blue:hover { background: #0C447C; }
-        .btn-red { background: #A32D2D; color: #fff; border-color: #A32D2D; width: auto; margin-top: 0; }
-        .btn-green { background: #0F6E56; color: #fff; border-color: #0F6E56; width: auto; margin-top: 0; padding: 6px 12px; font-size: 12px; }
-        .btn-green:hover { background: #085041; }
+        .btn-red { background: #A32D2D; color: #fff; border-color: #A32D2D; }
+        .btn-green { background: #0F6E56; color: #fff; border-color: #0F6E56; }
         .btn-sm { width: auto; margin-top: 0; padding: 7px 14px; font-size: 13px; }
         .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 1.25rem; margin-top: 12px; }
         .lbl { font-size: 13px; color: #666; display: block; margin-top: 12px; margin-bottom: 5px; }
         .err { color: #A32D2D; font-size: 13px; margin-top: 8px; }
-        .ok { color: #0F6E56; font-size: 13px; margin-top: 8px; }
-        .logo { color: #c00; font-weight: 700; font-size: 20px; letter-spacing: -0.5px; }
-        .tabs { display: flex; border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden; margin-bottom: 1rem; }
-        .tab { flex: 1; padding: 9px; border: none; background: #fff; color: #888; font-size: 13px; cursor: pointer; font-family: inherit; }
-        .tab.on { background: #f5f5f5; color: #111; font-weight: 500; }
-        .ptab { flex: 1; padding: 7px; border: none; font-size: 13px; cursor: pointer; font-family: inherit; border-radius: 6px; background: transparent; color: #888; }
+        .ok { color: #0F6E56; font-size: 13px; }
+        .logo { color: #c00; font-weight: 700; font-size: 20px; }
+        .atab { flex: 1; padding: 9px; border: none; background: #fff; color: #888; font-size: 13px; cursor: pointer; font-family: inherit; }
+        .atab.on { background: #f5f5f5; color: #111; font-weight: 500; }
+        .ptab { padding: 7px 14px; border: none; font-size: 13px; cursor: pointer; font-family: inherit; border-radius: 6px; background: transparent; color: #888; }
         .ptab.on { background: #fff; color: #111; font-weight: 500; }
         .upload-box { border: 2px dashed #ddd; border-radius: 8px; padding: 1rem; text-align: center; cursor: pointer; color: #888; font-size: 13px; margin-top: 6px; }
-        .upload-box:hover { background: #fafafa; border-color: #185FA5; }
+        .upload-box:hover { border-color: #185FA5; background: #fafafa; }
         .modal-bg { position: fixed; top:0;left:0;right:0;bottom:0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
+        .sbox { background: #f9f9f9; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+        .passage-text p { margin-bottom: 1em; font-size: 14px; line-height: 1.8; }
       `}</style>
 
-      {/* AUTH */}
+      <audio ref={audioRef} onEnded={() => { setIsPlaying(false); setAudioEnded(true) }} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} />
+
+      {/* ===== AUTH ===== */}
       {screen === 'auth' && (
         <div style={{ maxWidth: 400, margin: '3rem auto', padding: '0 1rem' }}>
           <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
             <div className="logo">IELTS</div>
-            <div style={{ fontSize: 22, fontWeight: 500, marginTop: 6 }}>Writing Practice</div>
-            <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>Timed exam simulation</div>
+            <div style={{ fontSize: 22, fontWeight: 500, marginTop: 6 }}>Practice Platform</div>
+            <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>Listening · Reading · Writing</div>
           </div>
           <div className="card" style={{ marginTop: 0 }}>
-            <div className="tabs">
-              <button className={`tab ${authTab === 'login' ? 'on' : ''}`} onClick={() => { setAuthTab('login'); setError('') }}>Sign in</button>
-              <button className={`tab ${authTab === 'reg' ? 'on' : ''}`} onClick={() => { setAuthTab('reg'); setError('') }}>Create account</button>
-              <button className={`tab ${authTab === 'admin' ? 'on' : ''}`} onClick={() => { setAuthTab('admin'); setError('') }}>Teacher</button>
+            <div style={{ display: 'flex', border: '1px solid #e5e5e5', borderRadius: 8, overflow: 'hidden', marginBottom: '1rem' }}>
+              <button className={`atab ${authTab==='login'?'on':''}`} onClick={() => { setAuthTab('login'); setError('') }}>Sign in</button>
+              <button className={`atab ${authTab==='reg'?'on':''}`} onClick={() => { setAuthTab('reg'); setError('') }}>Create account</button>
+              <button className={`atab ${authTab==='admin'?'on':''}`} onClick={() => { setAuthTab('admin'); setError('') }}>Teacher</button>
             </div>
-
             {authTab === 'login' && (
               <div>
                 <label className="lbl" style={{ marginTop: 0 }}>Username</label>
-                <input value={loginUser} onChange={e => setLoginUser(e.target.value)} placeholder="Your username" onKeyDown={e => e.key === 'Enter' && doLogin()} />
+                <input value={loginUser} onChange={e => setLoginUser(e.target.value)} placeholder="Your username" onKeyDown={e => e.key==='Enter'&&doLogin()} />
                 <label className="lbl">Password</label>
-                <input type="password" value={loginPass} onChange={e => setLoginPass(e.target.value)} placeholder="Your password" onKeyDown={e => e.key === 'Enter' && doLogin()} />
+                <input type="password" value={loginPass} onChange={e => setLoginPass(e.target.value)} placeholder="Your password" onKeyDown={e => e.key==='Enter'&&doLogin()} />
                 {error && <div className="err">{error}</div>}
-                <button className="btn btn-blue" onClick={doLogin} disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</button>
+                <button className="btn btn-blue" onClick={doLogin} disabled={loading}>{loading?'Signing in...':'Sign in'}</button>
               </div>
             )}
-
             {authTab === 'reg' && (
               <div>
                 <label className="lbl" style={{ marginTop: 0 }}>Full name</label>
@@ -320,16 +616,15 @@ export default function App() {
                 <label className="lbl">Confirm password</label>
                 <input type="password" value={regPass2} onChange={e => setRegPass2(e.target.value)} placeholder="Repeat password" />
                 {error && <div className="err">{error}</div>}
-                <button className="btn btn-blue" onClick={doRegister} disabled={loading}>{loading ? 'Creating...' : 'Create account'}</button>
+                <button className="btn btn-blue" onClick={doRegister} disabled={loading}>{loading?'Creating...':'Create account'}</button>
               </div>
             )}
-
             {authTab === 'admin' && (
               <div>
                 <label className="lbl" style={{ marginTop: 0 }}>Admin username</label>
                 <input value={adminUser} onChange={e => setAdminUser(e.target.value)} placeholder="Username" />
                 <label className="lbl">Admin password</label>
-                <input type="password" value={adminPass} onChange={e => setAdminPass(e.target.value)} placeholder="Password" onKeyDown={e => e.key === 'Enter' && doAdminLogin()} />
+                <input type="password" value={adminPass} onChange={e => setAdminPass(e.target.value)} placeholder="Password" onKeyDown={e => e.key==='Enter'&&doAdminLogin()} />
                 {error && <div className="err">{error}</div>}
                 <button className="btn btn-blue" onClick={doAdminLogin}>Enter admin panel</button>
               </div>
@@ -338,32 +633,28 @@ export default function App() {
         </div>
       )}
 
-      {/* HOME */}
+      {/* ===== HOME ===== */}
       {screen === 'home' && (
         <div style={{ maxWidth: 540, margin: '2rem auto', padding: '0 1rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <div>
-              <div className="logo">IELTS</div>
-              <div style={{ fontSize: 13, color: '#888', marginTop: 2 }}>Welcome, {currentUser?.full_name}</div>
-            </div>
+            <div><div className="logo">IELTS</div><div style={{ fontSize: 13, color: '#888', marginTop: 2 }}>Welcome, {currentUser?.full_name}</div></div>
             <button className="btn btn-sm" onClick={logout}>Sign out</button>
           </div>
           <div className="card" style={{ border: '2px solid #185FA5', marginTop: 0 }}>
             <div style={{ fontWeight: 500, fontSize: 16 }}>Full Mock Test</div>
-            <div style={{ fontSize: 13, color: '#888', marginTop: 4, marginBottom: 8 }} id="set-name-display"></div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Listening 30 min</div>
+            <div style={{ display: 'flex', gap: 8, margin: '10px 0', flexWrap: 'wrap' }}>
+              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Listening 30 min</div>
               <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
-              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Reading 60 min</div>
+              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Reading 60 min</div>
               <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
-              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Writing 60 min</div>
+              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Writing 60 min</div>
             </div>
             <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>Each module starts when you press Start. Complete all three in order.</div>
             {error && <div className="err">{error}</div>}
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-              <button className="btn btn-blue" style={{ width: 'auto', marginTop: 0 }} onClick={() => window.location.href = '/listening'}>Start Listening</button>
-              <button className="btn" style={{ width: 'auto', marginTop: 0, fontSize: 13 }} onClick={() => window.location.href = '/reading'}>Start Reading only</button>
-              <button className="btn" style={{ width: 'auto', marginTop: 0, fontSize: 13 }} onClick={goWarn}>Start Writing only</button>
+              <button className="btn btn-blue btn-sm" onClick={goListeningWarn}>Start Listening</button>
+              <button className="btn btn-sm" onClick={goReadingWarn}>Reading only</button>
+              <button className="btn btn-sm" onClick={goWritingWarn}>Writing only</button>
             </div>
           </div>
           <div className="card">
@@ -376,7 +667,7 @@ export default function App() {
                     <div style={{ fontWeight: 500, fontSize: 14 }}>{new Date(s.submitted_at).toLocaleString()}</div>
                     <div style={{ fontSize: 13, color: '#888', marginTop: 2 }}>Task 1: {wc(s.task1_answer)} words · Task 2: {wc(s.task2_answer)} words</div>
                   </div>
-                  <button className="btn-green btn" onClick={() => downloadPDF(s)}>Download PDF</button>
+                  <button className="btn btn-green btn-sm" onClick={() => downloadPDF(s)}>PDF</button>
                 </div>
               ))
             }
@@ -384,188 +675,411 @@ export default function App() {
         </div>
       )}
 
-      {/* WARN */}
-      {screen === 'warn' && (
+      {/* ===== LISTENING WARN ===== */}
+      {screen === 'listening-warn' && (
         <div style={{ maxWidth: 460, margin: '3rem auto', padding: '0 1rem' }}>
           <div className="card" style={{ marginTop: 0, border: '1px solid #E24B4A' }}>
-            <div style={{ fontSize: 28, marginBottom: 12, color: '#A32D2D' }}>⏱</div>
-            <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>Before you begin</div>
-            {tasks.set_name && <div style={{ fontSize: 13, color: '#185FA5', fontWeight: 500, marginBottom: 12, background: '#EFF6FF', padding: '6px 10px', borderRadius: 6, display: 'inline-block' }}>{tasks.set_name}</div>}
+            <div className="logo" style={{ marginBottom: 10 }}>IELTS</div>
+            <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 14 }}>Listening Test</div>
             <div style={{ fontSize: 14, lineHeight: 2.1, color: '#555' }}>
-              • Timer starts the moment you click <strong>Start</strong><br />
-              • You have <strong>60 minutes</strong> total<br />
-              • Task 1: at least 150 words (suggested 20 min)<br />
-              • Task 2: at least 250 words (suggested 40 min)<br />
-              • The timer <strong>cannot be paused</strong><br />
-              • Your work saves automatically on submit
+              • <strong>4 sections</strong>, <strong>40 questions</strong><br />
+              • Each section audio plays <strong>once</strong><br />
+              • Answer while listening<br />
+              • After Listening → <strong>Reading</strong> starts
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: '1.2rem' }}>
-              <button className="btn btn-sm" onClick={() => go('home')}>Cancel</button>
-              <button className="btn btn-blue btn-sm" onClick={startExam}>Start — 60:00</button>
+              <button className="btn btn-sm" onClick={() => go('home')}>Back</button>
+              <button className="btn btn-blue btn-sm" onClick={startListening}>Start Listening</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* EXAM */}
-      {screen === 'exam' && (
+      {/* ===== LISTENING EXAM ===== */}
+      {screen === 'listening-exam' && (
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+          <div style={{ background: '#fff', borderBottom: '1px solid #eee', padding: '10px 1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10 }}>
+            <div className="logo" style={{ fontSize: 15 }}>IELTS Listening</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f5f5f5', padding: '6px 14px', borderRadius: 8 }}>
+              <span style={{ fontSize: 12, color: '#888' }}>Section {listenSection + 1}</span>
+              <button onClick={playPause} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>{isPlaying ? '⏸' : '▶️'}</button>
+              <input type="range" min="0" max="1" step="0.05" value={volume} onChange={e => { setVolume(e.target.value); if (audioRef.current) audioRef.current.volume = e.target.value }} style={{ width: 70 }} />
+              {audioEnded && <span style={{ fontSize: 12, color: '#0F6E56', fontWeight: 500 }}>✓ Done</span>}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 13, color: '#888' }}>{Object.keys(listenAnswers).length}/40</span>
+              <button className={`btn btn-sm ${audioEnded ? 'btn-blue' : ''}`} onClick={() => audioEnded && nextListenSection()} style={{ opacity: audioEnded ? 1 : 0.4, cursor: audioEnded ? 'pointer' : 'not-allowed' }}>
+                {listenSection < 3 ? `Next: S${listenSection + 2}` : 'Submit'}
+              </button>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 4, background: '#fff', borderBottom: '1px solid #eee', padding: '8px 1.2rem' }}>
+            {['Section 1', 'Section 2', 'Section 3', 'Section 4'].map((t, i) => (
+              <div key={i} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 13, background: i === listenSection ? '#185FA5' : '#f5f5f5', color: i === listenSection ? '#fff' : '#888' }}>{t}</div>
+            ))}
+          </div>
+          <div style={{ maxWidth: 760, margin: '1.5rem auto', padding: '0 1rem', width: '100%', paddingBottom: '3rem' }}>
+            {!audioEnded && !isPlaying && (
+              <div style={{ background: '#EFF6FF', border: '1px solid #B5D4F4', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#185FA5' }}>
+                Press <strong>▶️</strong> to start Section {listenSection + 1} audio. Answer while listening.
+              </div>
+            )}
+            {renderListenQs(listenSectionData[listenSection])}
+          </div>
+        </div>
+      )}
+
+      {/* ===== READING WARN ===== */}
+      {screen === 'reading-warn' && (
+        <div style={{ maxWidth: 460, margin: '3rem auto', padding: '0 1rem' }}>
+          <div className="card" style={{ marginTop: 0, border: '1px solid #E24B4A' }}>
+            <div className="logo" style={{ marginBottom: 10 }}>IELTS</div>
+            <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 14 }}>Reading Test</div>
+            <div style={{ fontSize: 14, lineHeight: 2.1, color: '#555' }}>
+              • <strong>3 passages</strong>, <strong>40 questions</strong><br />
+              • You have <strong>60 minutes</strong><br />
+              • ~20 minutes per passage<br />
+              • After Reading → <strong>Writing</strong> starts
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: '1.2rem' }}>
+              <button className="btn btn-sm" onClick={() => go('home')}>Back</button>
+              <button className="btn btn-blue btn-sm" onClick={startReading}>Start Reading</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== READING EXAM ===== */}
+      {screen === 'reading-exam' && (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
           <div style={{ background: '#fff', borderBottom: '1px solid #eee', padding: '10px 1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-            <div className="logo" style={{ fontSize: 16 }}>IELTS Writing{tasks.set_name ? ` · ${tasks.set_name}` : ''}</div>
+            <div className="logo" style={{ fontSize: 15 }}>IELTS Reading</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 4, background: '#f5f5f5', borderRadius: 8, padding: 3 }}>
+                {['Passage 1','Passage 2','Passage 3'].map((t, i) => (
+                  <button key={i} className={`ptab ${readPassage===i?'on':''}`} onClick={() => setReadPassage(i)}>{t}</button>
+                ))}
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 600, fontFamily: 'monospace', color: readTimerColor }}>{fmt(readTimeLeft)}</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 13, color: '#888' }}>{Object.keys(readAnswers).length}/40</span>
+              <button className="btn btn-red btn-sm" onClick={() => setShowReadSubmit(true)}>Submit</button>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+            <div style={{ flex: 1, padding: '1.2rem', overflowY: 'auto', borderRight: '1px solid #eee' }}>
+              {readPassages[readPassage] && (
+                <div>
+                  <div style={{ background: '#f5f5f5', padding: '8px 12px', borderRadius: 8, fontSize: 12, marginBottom: 14 }}>
+                    <strong>Passage {readPassage + 1}</strong> — Spend about 20 minutes.
+                  </div>
+                  <div className="passage-text" dangerouslySetInnerHTML={{ __html: readPassages[readPassage].text || '<p>No passage loaded.</p>' }} />
+                </div>
+              )}
+            </div>
+            <div style={{ flex: 1, padding: '1.2rem', overflowY: 'auto' }}>
+              {readPassages[readPassage] && renderReadQs(readPassages[readPassage].questions)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== WRITING WARN ===== */}
+      {screen === 'writing-warn' && (
+        <div style={{ maxWidth: 460, margin: '3rem auto', padding: '0 1rem' }}>
+          <div className="card" style={{ marginTop: 0, border: '1px solid #E24B4A' }}>
+            <div className="logo" style={{ marginBottom: 10 }}>IELTS</div>
+            <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>Writing Test</div>
+            {tasks.set_name && <div style={{ fontSize: 13, color: '#185FA5', fontWeight: 500, marginBottom: 12, background: '#EFF6FF', padding: '5px 10px', borderRadius: 6, display: 'inline-block' }}>{tasks.set_name}</div>}
+            <div style={{ fontSize: 14, lineHeight: 2.1, color: '#555', marginTop: 8 }}>
+              • Timer starts when you click <strong>Start</strong><br />
+              • <strong>60 minutes</strong> total<br />
+              • Task 1: at least 150 words (20 min)<br />
+              • Task 2: at least 250 words (40 min)<br />
+              • Timer <strong>cannot be paused</strong>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: '1.2rem' }}>
+              <button className="btn btn-sm" onClick={() => go('home')}>Back</button>
+              <button className="btn btn-blue btn-sm" onClick={startWriting}>Start — 60:00</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== WRITING EXAM ===== */}
+      {screen === 'writing-exam' && (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+          <div style={{ background: '#fff', borderBottom: '1px solid #eee', padding: '10px 1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+            <div className="logo" style={{ fontSize: 16 }}>IELTS Writing</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ display: 'flex', gap: 4, background: '#f5f5f5', borderRadius: 8, padding: 3 }}>
-                <button className={`ptab ${part === 1 ? 'on' : ''}`} onClick={() => setPart(1)}>Task 1</button>
-                <button className={`ptab ${part === 2 ? 'on' : ''}`} onClick={() => setPart(2)}>Task 2</button>
+                <button className={`ptab ${writingPart===1?'on':''}`} onClick={() => setWritingPart(1)}>Task 1</button>
+                <button className={`ptab ${writingPart===2?'on':''}`} onClick={() => setWritingPart(2)}>Task 2</button>
               </div>
-              <div style={{ fontSize: 18, fontWeight: 600, fontFamily: 'monospace', color: timerColor, minWidth: 65 }}>{fmt(timeLeft)}</div>
+              <div style={{ fontSize: 18, fontWeight: 600, fontFamily: 'monospace', color: timerColor }}>{fmt(timeLeft)}</div>
             </div>
             <button className="btn btn-red btn-sm" onClick={() => setShowConfirm(true)}>Submit</button>
           </div>
           <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
             <div style={{ flex: 1, padding: '1rem', overflowY: 'auto', borderRight: '1px solid #eee' }}>
-              {part === 1 && (
+              {writingPart === 1 && (
                 <div>
-                  <div style={{ background: '#f5f5f5', padding: '9px 12px', borderRadius: 8, fontSize: 12, marginBottom: 12 }}>
-                    <strong>Task 1</strong> — Spend about 20 minutes. Write at least <strong>150 words</strong>.
-                  </div>
-                  {tasks.task1_image && (
-                    <img src={tasks.task1_image} alt="Task 1 chart" style={{ width: '100%', borderRadius: 6, border: '1px solid #eee', marginBottom: 12 }} />
-                  )}
+                  <div style={{ background: '#f5f5f5', padding: '9px 12px', borderRadius: 8, fontSize: 12, marginBottom: 12 }}><strong>Task 1</strong> — ~20 minutes. At least <strong>150 words</strong>.</div>
+                  {tasks.task1_image && <img src={tasks.task1_image} alt="Task 1" style={{ width: '100%', borderRadius: 6, border: '1px solid #eee', marginBottom: 12 }} />}
                   <div style={{ fontSize: 14, lineHeight: 1.7 }}>{tasks.task1_instructions}</div>
                 </div>
               )}
-              {part === 2 && (
+              {writingPart === 2 && (
                 <div>
-                  <div style={{ background: '#f5f5f5', padding: '9px 12px', borderRadius: 8, fontSize: 12, marginBottom: 12 }}>
-                    <strong>Task 2</strong> — Spend about 40 minutes. Write at least <strong>250 words</strong>.
-                  </div>
+                  <div style={{ background: '#f5f5f5', padding: '9px 12px', borderRadius: 8, fontSize: 12, marginBottom: 12 }}><strong>Task 2</strong> — ~40 minutes. At least <strong>250 words</strong>.</div>
                   <div style={{ fontSize: 14, lineHeight: 1.7 }}>{tasks.task2_prompt}</div>
                 </div>
               )}
             </div>
             <div style={{ flex: 1, padding: '1rem', display: 'flex', flexDirection: 'column' }}>
-              {part === 1 && (
-                <textarea value={ans1} onChange={e => setAns1(e.target.value)} placeholder="Write your Task 1 response here..." style={{ flex: 1, fontSize: 14, lineHeight: 1.8, minHeight: 400 }} />
-              )}
-              {part === 2 && (
-                <textarea value={ans2} onChange={e => setAns2(e.target.value)} placeholder="Write your Task 2 response here..." style={{ flex: 1, fontSize: 14, lineHeight: 1.8, minHeight: 400 }} />
-              )}
+              {writingPart === 1 && <textarea value={ans1} onChange={e => setAns1(e.target.value)} placeholder="Write your Task 1 response here..." style={{ flex: 1, fontSize: 14, lineHeight: 1.8, minHeight: 400 }} />}
+              {writingPart === 2 && <textarea value={ans2} onChange={e => setAns2(e.target.value)} placeholder="Write your Task 2 response here..." style={{ flex: 1, fontSize: 14, lineHeight: 1.8, minHeight: 400 }} />}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 8 }}>
-                <span style={{ color: '#888' }}>Words: {wc(part === 1 ? ans1 : ans2)}</span>
-                {part === 1 && wc(ans1) < 150 && <span style={{ color: '#A32D2D' }}>{150 - wc(ans1)} more needed</span>}
-                {part === 1 && wc(ans1) >= 150 && <span style={{ color: '#0F6E56' }}>Minimum reached</span>}
-                {part === 2 && wc(ans2) < 250 && <span style={{ color: '#A32D2D' }}>{250 - wc(ans2)} more needed</span>}
-                {part === 2 && wc(ans2) >= 250 && <span style={{ color: '#0F6E56' }}>Minimum reached</span>}
+                <span style={{ color: '#888' }}>Words: {wc(writingPart===1?ans1:ans2)}</span>
+                {writingPart===1 && wc(ans1)<150 && <span style={{ color:'#A32D2D' }}>{150-wc(ans1)} more needed</span>}
+                {writingPart===1 && wc(ans1)>=150 && <span style={{ color:'#0F6E56' }}>Minimum reached</span>}
+                {writingPart===2 && wc(ans2)<250 && <span style={{ color:'#A32D2D' }}>{250-wc(ans2)} more needed</span>}
+                {writingPart===2 && wc(ans2)>=250 && <span style={{ color:'#0F6E56' }}>Minimum reached</span>}
               </div>
             </div>
           </div>
-          {showConfirm && (
-            <div className="modal-bg">
-              <div className="card" style={{ maxWidth: 320, textAlign: 'center', margin: '1rem' }}>
-                <div style={{ fontWeight: 500, marginBottom: 8, fontSize: 16 }}>Submit your answers?</div>
-                <div style={{ fontSize: 13, color: '#666', marginBottom: '1rem', lineHeight: 1.6 }}>This will end your exam. Make sure you have answered both tasks.</div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                  <button className="btn btn-sm" onClick={() => setShowConfirm(false)}>Go back</button>
-                  <button className="btn btn-blue btn-sm" onClick={handleSubmit}>Yes, submit</button>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
-      {/* DONE */}
+      {/* ===== DONE ===== */}
       {screen === 'done' && (
         <div style={{ maxWidth: 400, margin: '4rem auto', padding: '0 1rem', textAlign: 'center' }}>
           <div className="card" style={{ marginTop: 0 }}>
             <div style={{ fontSize: 40, color: '#0F6E56', marginBottom: 12 }}>✓</div>
-            <div style={{ fontSize: 18, fontWeight: 500 }}>Submitted!</div>
+            <div style={{ fontSize: 18, fontWeight: 500 }}>All done!</div>
             <div style={{ fontSize: 13, color: '#666', marginTop: 8, lineHeight: 1.6 }}>Your writing has been saved. Your teacher will review it shortly.</div>
             <button className="btn btn-blue" style={{ marginTop: '1rem' }} onClick={() => { loadMySubs(currentUser.username); go('home') }}>Back to home</button>
           </div>
         </div>
       )}
 
-      {/* ADMIN */}
+      {/* ===== ADMIN ===== */}
       {screen === 'admin' && (
-        <div style={{ maxWidth: 960, margin: '1.5rem auto', padding: '0 1rem' }}>
+        <div style={{ maxWidth: 1100, margin: '1.5rem auto', padding: '0 1rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <div>
-              <div className="logo">IELTS</div>
-              <div style={{ fontSize: 13, color: '#888' }}>Admin panel</div>
+            <div><div className="logo">IELTS</div><div style={{ fontSize: 13, color: '#888' }}>Admin panel</div></div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: '#888' }}>Students: {students.length}</span>
+              <button className="btn btn-sm" onClick={loadAdmin}>Refresh</button>
+              <button className="btn btn-sm" onClick={logout}>Sign out</button>
             </div>
-            <button className="btn btn-sm" onClick={logout}>Sign out</button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: 12 }}>
-            <div>
-              <div className="card" style={{ marginTop: 0 }}>
-                <div style={{ fontWeight: 500, marginBottom: 12 }}>Upload tasks</div>
-                <label className="lbl" style={{ marginTop: 0 }}>Set name / date label</label>
-                <input value={adminSetName} onChange={e => setAdminSetName(e.target.value)} placeholder="e.g. Set 1 · 04.05.2026" style={{ marginBottom: 12 }} />
-                <div style={{ background: '#f9f9f9', borderRadius: 8, padding: 12, marginBottom: 12 }}>
-                  <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Task 1</div>
-                  <label className="lbl" style={{ marginTop: 0 }}>Chart / graph image</label>
-                  <div className="upload-box" onClick={() => document.getElementById('img-input').click()}>
-                    {imgPreview
-                      ? <img src={imgPreview} alt="preview" style={{ maxWidth: '100%', borderRadius: 6 }} />
-                      : <div>Click to upload image (JPG, PNG)</div>
-                    }
-                  </div>
-                  <input id="img-input" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImgUpload} />
-                  {imgPreview && <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>Click box to change image</div>}
-                  <label className="lbl">Written instructions</label>
-                  <textarea value={adminTask1Text} onChange={e => setAdminTask1Text(e.target.value)} style={{ minHeight: 80, fontSize: 13 }} placeholder="The chart below shows... Summarise the information..." />
+
+          {/* Admin tabs */}
+          <div style={{ display: 'flex', gap: 4, background: '#fff', border: '1px solid #eee', borderRadius: 10, padding: 4, marginBottom: 12 }}>
+            {['writing','listening','reading','submissions'].map(t => (
+              <button key={t} onClick={() => setAdminTab(t)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: 7, background: adminTab===t?'#185FA5':'transparent', color: adminTab===t?'#fff':'#888', fontWeight: adminTab===t?500:400, fontSize: 13, cursor: 'pointer', textTransform: 'capitalize', fontFamily: 'inherit' }}>{t}</button>
+            ))}
+          </div>
+
+          {saveMsg && <div style={{ background: '#E1F5EE', color: '#0F6E56', padding: '8px 12px', borderRadius: 8, fontSize: 13, marginBottom: 10 }}>{saveMsg}</div>}
+
+          {/* WRITING TAB */}
+          {adminTab === 'writing' && (
+            <div className="card" style={{ marginTop: 0 }}>
+              <div style={{ fontWeight: 500, marginBottom: 12 }}>Writing tasks</div>
+              <label className="lbl" style={{ marginTop: 0 }}>Set name / date</label>
+              <input value={adminSetName} onChange={e => setAdminSetName(e.target.value)} placeholder="e.g. Set 1 · 06.04.2026" />
+              <div className="sbox" style={{ marginTop: 12 }}>
+                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Task 1</div>
+                <label className="lbl" style={{ marginTop: 0 }}>Chart / graph image</label>
+                <div className="upload-box" onClick={() => document.getElementById('img-input').click()}>
+                  {imgPreview ? <img src={imgPreview} alt="preview" style={{ maxWidth: '100%', borderRadius: 6 }} /> : <div>Click to upload image (JPG, PNG)</div>}
                 </div>
-                <div style={{ background: '#f9f9f9', borderRadius: 8, padding: 12 }}>
-                  <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Task 2</div>
-                  <label className="lbl" style={{ marginTop: 0 }}>Essay question</label>
-                  <textarea value={adminTask2} onChange={e => setAdminTask2(e.target.value)} style={{ minHeight: 100, fontSize: 13 }} placeholder="Some people believe that... Discuss both views..." />
-                </div>
-                <button className="btn btn-blue" onClick={saveTasks}>Save tasks</button>
-                {saveMsg && <div className="ok">{saveMsg}</div>}
+                <input id="img-input" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImgUpload} />
+                <label className="lbl">Written instructions</label>
+                <textarea value={adminTask1Text} onChange={e => setAdminTask1Text(e.target.value)} style={{ minHeight: 80, fontSize: 13 }} placeholder="The chart below shows..." />
               </div>
-              <div className="card">
-                <div style={{ fontWeight: 500, marginBottom: 8 }}>Students ({students.length})</div>
-                {students.length === 0
-                  ? <div style={{ fontSize: 13, color: '#888' }}>No students registered yet.</div>
-                  : students.map((s, i) => (
-                    <div key={i} style={{ borderTop: '1px solid #eee', padding: '6px 0', fontSize: 13 }}>
-                      <strong>{s.full_name}</strong> <span style={{ color: '#888' }}>@{s.username}</span>
+              <div className="sbox">
+                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Task 2</div>
+                <textarea value={adminTask2} onChange={e => setAdminTask2(e.target.value)} style={{ minHeight: 100, fontSize: 13 }} placeholder="Some people believe that..." />
+              </div>
+              <button className="btn btn-blue" onClick={saveWritingTasks} style={{ marginTop: 8 }}>Save writing tasks</button>
+            </div>
+          )}
+
+          {/* LISTENING TAB */}
+          {adminTab === 'listening' && (
+            <div className="card" style={{ marginTop: 0 }}>
+              <div style={{ fontWeight: 500, marginBottom: 4 }}>Listening — upload PDF & audio</div>
+
+              {/* PDF Upload */}
+              <div className="sbox">
+                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Step 1 — Upload questions PDF</div>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>Upload your listening questions PDF. The platform will auto-extract sections and answer key.</div>
+                <label style={{ display: 'inline-block', padding: '8px 16px', background: '#185FA5', color: '#fff', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
+                  {pdfParsing ? 'Extracting...' : 'Upload Listening PDF'}
+                  <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => uploadListeningPDF(e.target.files[0])} disabled={pdfParsing} />
+                </label>
+                {pdfMsg && <div style={{ marginTop: 8, fontSize: 13, color: pdfMsg.startsWith('Error') ? '#A32D2D' : '#0F6E56' }}>{pdfMsg}</div>}
+              </div>
+
+              {/* Audio Upload */}
+              <div className="sbox">
+                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Step 2 — Upload audio files (MP3)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {[{label:'Section 1', url:lA1},{label:'Section 2', url:lA2},{label:'Section 3', url:lA3},{label:'Section 4', url:lA4}].map((a, i) => (
+                    <div key={i} style={{ background: '#fff', border: '1px solid #eee', borderRadius: 8, padding: 10 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{a.label}</div>
+                      {a.url && <div style={{ fontSize: 11, color: '#0F6E56', marginBottom: 6, wordBreak: 'break-all' }}>✓ Audio ready</div>}
+                      <label style={{ display: 'inline-block', padding: '6px 12px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>
+                        {audioUploading[i] ? 'Uploading...' : 'Upload MP3'}
+                        <input type="file" accept=".mp3,audio/*" style={{ display: 'none' }} onChange={e => uploadAudioFile(e.target.files[0], i)} disabled={audioUploading[i]} />
+                      </label>
                     </div>
-                  ))
-                }
+                  ))}
+                </div>
+              </div>
+
+              {/* Extracted preview - editable */}
+              <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8, marginTop: 4 }}>Step 3 — Review & fix extracted content</div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>Check what was extracted below. Fix any mistakes before saving.</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {[{label:'Section 1 (Q1-10)', val:lS1, set:setLS1},{label:'Section 2 (Q11-20)', val:lS2, set:setLS2},{label:'Section 3 (Q21-30)', val:lS3, set:setLS3},{label:'Section 4 (Q31-40)', val:lS4, set:setLS4}].map((s, i) => (
+                  <div key={i} className="sbox">
+                    <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>{s.label}</div>
+                    <textarea value={s.val} onChange={e => s.set(e.target.value)} style={{ minHeight: 150, fontSize: 12 }} placeholder="Questions will appear here after PDF upload..." />
+                  </div>
+                ))}
+              </div>
+              <div className="sbox">
+                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4 }}>Answer key</div>
+                <textarea value={lKey} onChange={e => setLKey(e.target.value)} style={{ minHeight: 100, fontSize: 12 }} placeholder="Answer key will appear here after PDF upload..." />
+              </div>
+              <button className="btn btn-blue" onClick={saveListening} style={{ marginTop: 8 }}>Save listening test</button>
+            </div>
+          )}
+
+          {/* READING TAB */}
+          {adminTab === 'reading' && (
+            <div className="card" style={{ marginTop: 0 }}>
+              <div style={{ fontWeight: 500, marginBottom: 4 }}>Reading — upload PDF</div>
+
+              {/* PDF Upload */}
+              <div className="sbox">
+                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Step 1 — Upload reading PDF</div>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>Upload your reading test PDF. Passages, questions and answer key will be extracted automatically.</div>
+                <label style={{ display: 'inline-block', padding: '8px 16px', background: '#185FA5', color: '#fff', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
+                  {pdfParsing ? 'Extracting...' : 'Upload Reading PDF'}
+                  <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => uploadReadingPDF(e.target.files[0])} disabled={pdfParsing} />
+                </label>
+                {pdfMsg && <div style={{ marginTop: 8, fontSize: 13, color: pdfMsg.startsWith('Error') ? '#A32D2D' : '#0F6E56' }}>{pdfMsg}</div>}
+              </div>
+
+              {/* Extracted preview - editable */}
+              <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8, marginTop: 4 }}>Step 2 — Review & fix extracted content</div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>Check what was extracted. Fix passages, questions or answers before saving.</div>
+              {[
+                {label:'Passage 1 (Q1-13)', t:rP1T, setT:setRP1T, txt:rP1Txt, setTxt:setRP1Txt, q:rP1Q, setQ:setRP1Q},
+                {label:'Passage 2 (Q14-26)', t:rP2T, setT:setRP2T, txt:rP2Txt, setTxt:setRP2Txt, q:rP2Q, setQ:setRP2Q},
+                {label:'Passage 3 (Q27-40)', t:rP3T, setT:setRP3T, txt:rP3Txt, setTxt:setRP3Txt, q:rP3Q, setQ:setRP3Q},
+              ].map((p, i) => (
+                <div key={i} className="sbox">
+                  <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>{p.label}</div>
+                  <label className="lbl" style={{ marginTop: 0 }}>Passage title</label>
+                  <input value={p.t} onChange={e => p.setT(e.target.value)} placeholder="Will be extracted from PDF..." />
+                  <label className="lbl">Passage text</label>
+                  <textarea value={p.txt} onChange={e => p.setTxt(e.target.value)} style={{ minHeight: 140, fontSize: 12 }} placeholder="Will be extracted from PDF..." />
+                  <label className="lbl">Questions</label>
+                  <textarea value={p.q} onChange={e => p.setQ(e.target.value)} style={{ minHeight: 140, fontSize: 12 }} placeholder="Will be extracted from PDF..." />
+                </div>
+              ))}
+              <div className="sbox">
+                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4 }}>Answer key (all 40)</div>
+                <textarea value={rKey} onChange={e => setRKey(e.target.value)} style={{ minHeight: 100, fontSize: 12 }} placeholder="Will be extracted from PDF..." />
+              </div>
+              <button className="btn btn-blue" onClick={saveReading} style={{ marginTop: 8 }}>Save reading test</button>
+            </div>
+          )}
+
+          {/* SUBMISSIONS TAB */}
+          {adminTab === 'submissions' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 12 }}>
+              <div className="card" style={{ marginTop: 0 }}>
+                <div style={{ fontWeight: 500, marginBottom: 10 }}>Listening ({listeningSubs.length})</div>
+                {listeningSubs.length === 0 ? <div style={{ color:'#888', fontSize:13 }}>No submissions yet.</div>
+                  : listeningSubs.map((s,i) => (
+                    <div key={i} style={{ borderTop:'1px solid #eee', padding:'8px 0' }}>
+                      <div style={{ fontWeight:500, fontSize:13 }}>{s.full_name} <span style={{ color:'#888', fontWeight:400 }}>@{s.username}</span></div>
+                      <div style={{ fontSize:12, color:'#888' }}>{new Date(s.submitted_at).toLocaleString()}</div>
+                      <div style={{ fontSize:14, color:'#185FA5', fontWeight:500, marginTop:2 }}>Score: {s.score} / 40</div>
+                    </div>
+                  ))}
+              </div>
+              <div className="card" style={{ marginTop: 0 }}>
+                <div style={{ fontWeight: 500, marginBottom: 10 }}>Reading ({readingSubs.length})</div>
+                {readingSubs.length === 0 ? <div style={{ color:'#888', fontSize:13 }}>No submissions yet.</div>
+                  : readingSubs.map((s,i) => (
+                    <div key={i} style={{ borderTop:'1px solid #eee', padding:'8px 0' }}>
+                      <div style={{ fontWeight:500, fontSize:13 }}>{s.full_name} <span style={{ color:'#888', fontWeight:400 }}>@{s.username}</span></div>
+                      <div style={{ fontSize:12, color:'#888' }}>{new Date(s.submitted_at).toLocaleString()}</div>
+                      <div style={{ fontSize:14, color:'#185FA5', fontWeight:500, marginTop:2 }}>Score: {s.score} / 40</div>
+                    </div>
+                  ))}
+              </div>
+              <div className="card" style={{ marginTop: 0 }}>
+                <div style={{ fontWeight: 500, marginBottom: 10 }}>Writing ({writingSubs.length})</div>
+                {writingSubs.length === 0 ? <div style={{ color:'#888', fontSize:13 }}>No submissions yet.</div>
+                  : writingSubs.map((s,i) => (
+                    <div key={i} style={{ borderTop:'1px solid #eee', padding:'8px 0' }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                        <div style={{ fontWeight:500, fontSize:13 }}>{s.full_name} <span style={{ color:'#888', fontWeight:400 }}>@{s.username}</span></div>
+                        <button className="btn btn-green btn-sm" onClick={() => downloadPDF(s)}>PDF</button>
+                      </div>
+                      <div style={{ fontSize:12, color:'#888' }}>{new Date(s.submitted_at).toLocaleString()}</div>
+                      <div style={{ fontSize:12, color:'#888', marginTop:2 }}>T1: {wc(s.task1_answer)}w · T2: {wc(s.task2_answer)}w</div>
+                    </div>
+                  ))}
               </div>
             </div>
-            <div className="card" style={{ marginTop: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <div style={{ fontWeight: 500 }}>Submissions ({allSubs.length})</div>
-                <button className="btn btn-sm" onClick={loadAdmin}>Refresh</button>
-              </div>
-              <div style={{ maxHeight: 700, overflowY: 'auto' }}>
-                {allSubs.length === 0
-                  ? <div style={{ fontSize: 13, color: '#888' }}>No submissions yet.</div>
-                  : allSubs.map((s, i) => (
-                    <div key={i} style={{ border: '1px solid #eee', borderRadius: 8, padding: 12, marginBottom: 10 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <strong style={{ fontSize: 14 }}>{s.full_name} <span style={{ fontWeight: 400, color: '#888' }}>@{s.username}</span></strong>                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 11, color: '#888' }}>{new Date(s.submitted_at).toLocaleString()}</span>
-                          <button className="btn-green btn" onClick={() => downloadPDF(s)}>Download PDF</button>
-                        </div>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                        <div>
-                          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Task 1 — {wc(s.task1_answer)} words</div>
-                          <div style={{ background: '#f9f9f9', padding: 8, borderRadius: 6, fontSize: 12, lineHeight: 1.6, maxHeight: 130, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>{s.task1_answer || <em>No answer</em>}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Task 2 — {wc(s.task2_answer)} words</div>
-                          <div style={{ background: '#f9f9f9', padding: 8, borderRadius: 6, fontSize: 12, lineHeight: 1.6, maxHeight: 130, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>{s.task2_answer || <em>No answer</em>}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                }
-              </div>
+          )}
+        </div>
+      )}
+
+      {/* Modals */}
+      {showConfirm && (
+        <div className="modal-bg">
+          <div className="card" style={{ maxWidth: 320, textAlign: 'center', margin: '1rem' }}>
+            <div style={{ fontWeight:500, fontSize:16, marginBottom:8 }}>Submit writing?</div>
+            <div style={{ fontSize:13, color:'#666', marginBottom:'1rem', lineHeight:1.6 }}>Make sure you have answered both tasks.</div>
+            <div style={{ display:'flex', gap:8, justifyContent:'center' }}>
+              <button className="btn btn-sm" onClick={() => setShowConfirm(false)}>Go back</button>
+              <button className="btn btn-blue btn-sm" onClick={handleWritingSubmit}>Yes, submit</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showListenSubmit && (
+        <div className="modal-bg">
+          <div className="card" style={{ maxWidth: 340, textAlign: 'center', margin: '1rem' }}>
+            <div style={{ fontWeight:500, fontSize:16, marginBottom:8 }}>Submit Listening?</div>
+            <div style={{ fontSize:13, color:'#666', marginBottom:'1rem', lineHeight:1.6 }}>You will move to <strong>Reading</strong>. You cannot come back.</div>
+            <div style={{ display:'flex', gap:8, justifyContent:'center' }}>
+              <button className="btn btn-sm" onClick={() => setShowListenSubmit(false)}>Go back</button>
+              <button className="btn btn-blue btn-sm" onClick={submitListening}>Submit & Start Reading</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showReadSubmit && (
+        <div className="modal-bg">
+          <div className="card" style={{ maxWidth: 340, textAlign: 'center', margin: '1rem' }}>
+            <div style={{ fontWeight:500, fontSize:16, marginBottom:8 }}>Submit Reading?</div>
+            <div style={{ fontSize:13, color:'#666', marginBottom:'1rem', lineHeight:1.6 }}>You will move to <strong>Writing</strong>. You cannot come back.</div>
+            <div style={{ display:'flex', gap:8, justifyContent:'center' }}>
+              <button className="btn btn-sm" onClick={() => setShowReadSubmit(false)}>Go back</button>
+              <button className="btn btn-blue btn-sm" onClick={submitReading}>Submit & Start Writing</button>
             </div>
           </div>
         </div>
