@@ -281,6 +281,29 @@ export default function App() {
   async function goWritingWarn() {
     const { data } = await supabase.from('tasks').select('*').eq('id', 1).single()
     if (!data || (!data.task1_instructions && !data.task2_prompt)) return setError('No writing tasks uploaded yet.')
+    
+    // Check deadline — lock at midnight of the day tasks were uploaded
+    if (data.updated_at) {
+      const uploadDate = new Date(data.updated_at)
+      const deadline = new Date(uploadDate)
+      deadline.setHours(23, 59, 59, 999)
+      if (new Date() > deadline) return setError('The deadline for this writing task has passed (midnight on ' + uploadDate.toLocaleDateString() + ').')
+    }
+
+    // Check if student already submitted
+    const { data: existing } = await supabase.from('submissions')
+      .select('id, task1_answer, task2_answer, submitted_at')
+      .eq('username', currentUser.username)
+      .order('submitted_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (existing && existing.task1_answer && existing.task1_answer !== 'EMPTY') {
+      const wc1 = existing.task1_answer ? existing.task1_answer.trim().split(/\s+/).filter(Boolean).length : 0
+      const wc2 = existing.task2_answer ? existing.task2_answer.trim().split(/\s+/).filter(Boolean).length : 0
+      return setError('You have already submitted this task on ' + new Date(existing.submitted_at).toLocaleString() + '. Task 1: ' + wc1 + ' words · Task 2: ' + wc2 + ' words.')
+    }
+
     setTasks(data); setError(''); go('writing-warn')
   }
 
@@ -677,7 +700,7 @@ export default function App() {
               <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Writing 60 min</div>
             </div>
             <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>Each module starts when you press Start. Complete all three in order.</div>
-            {error && <div className="err">{error}</div>}
+            {error && <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#A32D2D', marginTop: 10 }}>{error}</div>}
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
               <button className="btn btn-blue btn-sm" onClick={goListeningWarn}>Start Listening</button>
               <button className="btn btn-sm" onClick={goReadingWarn}>Reading only</button>
@@ -865,8 +888,8 @@ export default function App() {
               )}
             </div>
             <div style={{ flex: 1, padding: '1rem', display: 'flex', flexDirection: 'column' }}>
-              {writingPart === 1 && <textarea value={ans1} onChange={e => setAns1(e.target.value)} placeholder="Write your Task 1 response here..." style={{ flex: 1, fontSize: 14, lineHeight: 1.8, minHeight: 400 }} />}
-              {writingPart === 2 && <textarea value={ans2} onChange={e => setAns2(e.target.value)} placeholder="Write your Task 2 response here..." style={{ flex: 1, fontSize: 14, lineHeight: 1.8, minHeight: 400 }} />}
+              <textarea value={ans1} onChange={e => setAns1(e.target.value)} placeholder="Write your Task 1 response here..." style={{ flex: 1, fontSize: 14, lineHeight: 1.8, minHeight: 400, display: writingPart === 1 ? 'block' : 'none' }} />
+              <textarea value={ans2} onChange={e => setAns2(e.target.value)} placeholder="Write your Task 2 response here..." style={{ flex: 1, fontSize: 14, lineHeight: 1.8, minHeight: 400, display: writingPart === 2 ? 'block' : 'none' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 8 }}>
                 <span style={{ color: '#888' }}>Words: {wc(writingPart===1?ans1:ans2)}</span>
                 {writingPart===1 && wc(ans1)<150 && <span style={{ color:'#A32D2D' }}>{150-wc(ans1)} more needed</span>}
