@@ -84,6 +84,21 @@ export default function App() {
   const [saveMsg, setSaveMsg] = useState('')
 
   useEffect(() => {
+    const saved = localStorage.getItem('ielts_user')
+    if (saved) {
+      const user = JSON.parse(saved)
+      setCurrentUser(user)
+      if (user.isAdmin) {
+        loadAdmin()
+        setScreen('admin')
+      } else {
+        loadMySubs(user.username)
+        setScreen('home')
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     if (timerRunning) {
       timerRef.current = setInterval(() => {
         setTimeLeft(t => {
@@ -116,6 +131,7 @@ export default function App() {
     setLoading(false)
     if (err) return setError('Error creating account. Try again.')
     setCurrentUser({ username: regUser.toLowerCase(), full_name: regName })
+    localStorage.setItem('ielts_user', JSON.stringify({ username: regUser.toLowerCase(), full_name: regName }))
     await loadMySubs(regUser.toLowerCase())
     go('home')
   }
@@ -127,6 +143,7 @@ export default function App() {
     setLoading(false)
     if (err || !data) return setError('Incorrect username or password.')
     setCurrentUser({ username: data.username, full_name: data.full_name })
+    localStorage.setItem('ielts_user', JSON.stringify({ username: data.username, full_name: data.full_name }))
     await loadMySubs(data.username)
     go('home')
   }
@@ -134,7 +151,9 @@ export default function App() {
   function doAdminLogin() {
     setError('')
     if (adminUser === ADMIN_USER && adminPass === ADMIN_PASS) {
-      setCurrentUser({ username: ADMIN_USER, full_name: 'Teacher', isAdmin: true })
+      const user = { username: ADMIN_USER, full_name: 'Teacher', isAdmin: true }
+      setCurrentUser(user)
+      localStorage.setItem('ielts_user', JSON.stringify(user))
       loadAdmin()
       go('admin')
     } else {
@@ -146,6 +165,7 @@ export default function App() {
     clearInterval(timerRef.current)
     setTimerRunning(false)
     setCurrentUser(null)
+    localStorage.removeItem('ielts_user')
     setAns1(''); setAns2('')
     go('auth')
   }
