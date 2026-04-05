@@ -141,6 +141,7 @@ export default function App() {
   const ans1Ref = useRef('')
   const ans2Ref = useRef('')
   const submittedRef = useRef(false)
+  const [savedIndicator, setSavedIndicator] = useState('')
   const [writingPart, setWritingPart] = useState(1)
   const [timeLeft, setTimeLeft] = useState(3600)
   const [timerRunning, setTimerRunning] = useState(false)
@@ -251,6 +252,19 @@ export default function App() {
     return () => window.removeEventListener('message', handleMessage)
   }, [currentUser])
 
+  // Auto-save every second during exam
+  useEffect(() => {
+    if (screen !== 'writing-exam' || !currentUser) return
+    const interval = setInterval(() => {
+      const t1 = ans1Ref.current || ans1
+      const t2 = ans2Ref.current || ans2
+      if (submittedRef.current) return
+      localStorage.setItem('ielts_autosave_' + currentUser.username, JSON.stringify({ t1, t2, savedAt: new Date().toISOString() }))
+      setSavedIndicator('saved')
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [screen, currentUser])
+
   const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
   const wc = (t) => t ? t.trim().split(/\s+/).filter(Boolean).length : 0
   const go = (s) => { setScreen(s); setError('') }
@@ -345,8 +359,23 @@ export default function App() {
     if (submittedRef.current) return
     submittedRef.current = true
     clearInterval(timerRef.current); setTimerRunning(false); setShowConfirm(false)
-    const t1 = ans1Ref.current || ans1
-    const t2 = ans2Ref.current || ans2
+    
+    // Get latest answers from refs, state, or localStorage backup
+    let t1 = ans1Ref.current || ans1
+    let t2 = ans2Ref.current || ans2
+    
+    // If both empty, try localStorage backup
+    if (!t1 && !t2 && currentUser) {
+      try {
+        const backup = localStorage.getItem('ielts_autosave_' + currentUser.username)
+        if (backup) {
+          const parsed = JSON.parse(backup)
+          t1 = parsed.t1 || ''
+          t2 = parsed.t2 || ''
+        }
+      } catch(e) {}
+    }
+
     const { error } = await supabase.from('submissions').insert({ 
       username: currentUser.username, 
       full_name: currentUser.full_name, 
@@ -355,9 +384,11 @@ export default function App() {
     })
     if (error) {
       submittedRef.current = false
-      alert('Error saving: ' + error.message + '. Please screenshot your work and send to teacher!')
+      alert('Error saving: ' + error.message + '. Screenshot your work and send to teacher!')
       return
     }
+    // Clear backup after successful save
+    try { localStorage.removeItem('ielts_autosave_' + currentUser.username) } catch(e) {}
     go('done')
   }
 
@@ -899,7 +930,10 @@ export default function App() {
       {screen === 'writing-exam' && (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
           <div style={{ background: '#fff', borderBottom: '1px solid #eee', padding: '10px 1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-            <div className="logo" style={{ fontSize: 16 }}>IELTS Writing</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div className="logo" style={{ fontSize: 16 }}>IELTS Writing</div>
+              {savedIndicator === 'saved' && <div style={{ fontSize: 12, color: '#0F6E56', display: 'flex', alignItems: 'center', gap: 4 }}>✓ Saved</div>}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ display: 'flex', gap: 4, background: '#f5f5f5', borderRadius: 8, padding: 3 }}>
                 <button className={`ptab ${writingPart===1?'on':''}`} onClick={() => setWritingPart(1)}>Task 1</button>
