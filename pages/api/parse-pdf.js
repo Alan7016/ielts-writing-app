@@ -1,3 +1,4 @@
+export const maxDuration = 60
 export const config = {
   api: {
     bodyParser: {
