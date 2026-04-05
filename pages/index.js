@@ -367,21 +367,45 @@ export default function App() {
   }
 
   // PDF upload handlers
+  async function callClaudeWithPDF(base64, type) {
+    const prompt = type === 'listening'
+      ? `This is an IELTS Listening test PDF. Extract ALL questions organized by section. Return ONLY a JSON object:
+{"section1":"1. question ___\n2. another ___\n...","section2":"11. MCQ question\nA. option\nB. option\nC. option\n...","section3":"21. question\nA. option\n...","section4":"31. ___ word\n...","answerKey":{"1":"answer","11":"C"}}`
+      : `This is an IELTS Reading test PDF. Extract ALL passages and questions. Return ONLY a JSON object:
+{"passages":[{"title":"Passage 1 title","text":"Full passage text...","questions":"1. gap ___ fill\n8. True false statement\n14. MCQ\nA. option\nB. option"},{"title":"Passage 2","text":"...","questions":"..."},{"title":"Passage 3","text":"...","questions":"..."}],"answerKey":{"1":"white","8":"TRUE","14":"D"}}`
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.NEXT_PUBLIC_ANTHROPIC_KEY || '',
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 8000,
+        messages: [{ role: 'user', content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+          { type: 'text', text: prompt }
+        ]}]
+      })
+    })
+    if (!response.ok) throw new Error('API error: ' + response.status)
+    const data = await response.json()
+    const text = data.content[0].text.trim()
+    const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    return JSON.parse(clean)
+  }
+
   async function uploadListeningPDF(file) {
     if (!file) return
-    setPdfParsing(true); setPdfMsg('Reading PDF...')
+    setPdfParsing(true); setPdfMsg('Reading PDF with AI... (15-30 seconds)')
     const reader = new FileReader()
     reader.onload = async (e) => {
       const base64 = e.target.result.split(',')[1]
       try {
-        const res = await fetch('/api/parse-pdf', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ base64, type: 'listening' })
-        })
-        if (!res.ok) { setPdfMsg('Server error: ' + res.status); setPdfParsing(false); return }
-        const data = await res.json()
-        if (data.error) { setPdfMsg('Error: ' + data.error); setPdfParsing(false); return }
+        const data = await callClaudeWithPDF(base64, 'listening')
         if (data.section1) setLS1(data.section1)
         if (data.section2) setLS2(data.section2)
         if (data.section3) setLS3(data.section3)
@@ -398,19 +422,12 @@ export default function App() {
 
   async function uploadReadingPDF(file) {
     if (!file) return
-    setPdfParsing(true); setPdfMsg('Reading PDF...')
+    setPdfParsing(true); setPdfMsg('Reading PDF with AI... (15-30 seconds)')
     const reader = new FileReader()
     reader.onload = async (e) => {
       const base64 = e.target.result.split(',')[1]
       try {
-        const res = await fetch('/api/parse-pdf', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ base64, type: 'reading' })
-        })
-        if (!res.ok) { setPdfMsg('Server error: ' + res.status); setPdfParsing(false); return }
-        const data = await res.json()
-        if (data.error) { setPdfMsg('Error: ' + data.error); setPdfParsing(false); return }
+        const data = await callClaudeWithPDF(base64, 'reading')
         if (data.passages) {
           setRP1T(data.passages[0]?.title || ''); setRP1Txt(data.passages[0]?.text || ''); setRP1Q(data.passages[0]?.questions || '')
           setRP2T(data.passages[1]?.title || ''); setRP2Txt(data.passages[1]?.text || ''); setRP2Q(data.passages[1]?.questions || '')
