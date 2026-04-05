@@ -281,28 +281,31 @@ export default function App() {
   async function goWritingWarn() {
     const { data } = await supabase.from('tasks').select('*').eq('id', 1).single()
     if (!data || (!data.task1_instructions && !data.task2_prompt)) return setError('No writing tasks uploaded yet.')
-    
-    // Check deadline — lock at midnight of the day tasks were uploaded
+
+    // Check deadline — lock at midnight LOCAL time of the day tasks were uploaded
     if (data.updated_at) {
       const uploadDate = new Date(data.updated_at)
-      const deadline = new Date(uploadDate)
-      deadline.setHours(23, 59, 59, 999)
-      if (new Date() > deadline) return setError('The deadline for this writing task has passed (midnight on ' + uploadDate.toLocaleDateString() + ').')
+      const deadline = new Date(uploadDate.getFullYear(), uploadDate.getMonth(), uploadDate.getDate(), 23, 59, 59, 999)
+      const now = new Date()
+      if (now > deadline) return setError('The deadline for this writing task has passed (midnight on ' + deadline.toLocaleDateString() + ').')
     }
 
-    // Check if student already submitted
-    const { data: existing } = await supabase.from('submissions')
-      .select('id, task1_answer, task2_answer, submitted_at')
-      .eq('username', currentUser.username)
-      .order('submitted_at', { ascending: false })
-      .limit(1)
-      .single()
+    // Check if student already submitted with actual content
+    try {
+      const { data: subs } = await supabase.from('submissions')
+        .select('id, task1_answer, task2_answer, submitted_at')
+        .eq('username', currentUser.username)
+        .order('submitted_at', { ascending: false })
 
-    if (existing && existing.task1_answer && existing.task1_answer !== 'EMPTY') {
-      const wc1 = existing.task1_answer ? existing.task1_answer.trim().split(/\s+/).filter(Boolean).length : 0
-      const wc2 = existing.task2_answer ? existing.task2_answer.trim().split(/\s+/).filter(Boolean).length : 0
-      return setError('You have already submitted this task on ' + new Date(existing.submitted_at).toLocaleString() + '. Task 1: ' + wc1 + ' words · Task 2: ' + wc2 + ' words.')
-    }
+      if (subs && subs.length > 0) {
+        const validSub = subs.find(s => s.task1_answer && s.task1_answer.trim().length > 10)
+        if (validSub) {
+          const wc1 = validSub.task1_answer.trim().split(/\s+/).filter(Boolean).length
+          const wc2 = validSub.task2_answer ? validSub.task2_answer.trim().split(/\s+/).filter(Boolean).length : 0
+          return setError('Already submitted on ' + new Date(validSub.submitted_at).toLocaleString() + ' — Task 1: ' + wc1 + ' words · Task 2: ' + wc2 + ' words.')
+        }
+      }
+    } catch(e) {}
 
     setTasks(data); setError(''); go('writing-warn')
   }
