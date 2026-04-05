@@ -1,11 +1,7 @@
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf'
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = false
-
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '10mb',
+      sizeLimit: '20mb',
     },
   },
 }
@@ -17,152 +13,125 @@ export default async function handler(req, res) {
     const { base64, type } = req.body
     if (!base64) return res.status(400).json({ error: 'No PDF data provided' })
 
-    const binary = Buffer.from(base64, 'base64')
-    const uint8 = new Uint8Array(binary)
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) return res.status(500).json({ error: 'API key not configured' })
 
-    const pdf = await pdfjsLib.getDocument({ data: uint8, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise
-    
-    let fullText = ''
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const content = await page.getTextContent()
-      const pageText = content.items.map(item => item.str).join(' ')
-      fullText += pageText + '\n'
+    const prompt = type === 'listening'
+      ? `This is an IELTS Listening test PDF. Extract ALL questions organized by section.
+
+Return ONLY a JSON object in this exact format:
+{
+  "section1": "1. question text here ___\n2. another ___ question\n...",
+  "section2": "11. MCQ question here\nA. option one\nB. option two\nC. option three\n12. ...",
+  "section3": "21. question\nA. option\nB. option\nC. option\n...",
+  "section4": "31. ___ word\n32. ___ word\n...",
+  "answerKey": {
+    "1": "answer",
+    "2": "answer",
+    "11": "C",
+    "12": "B"
+  }
+}
+
+Rules:
+- For gap fill questions: include the full sentence with ___ where the blank is
+- For MCQ: include the question then options on new lines as A. B. C.
+- For matching: include the statement with ___ at the end
+- Answer key must have all 40 answers
+- Return ONLY the JSON, no other text`
+
+      : `This is an IELTS Reading test PDF. Extract ALL passages and questions.
+
+Return ONLY a JSON object in this exact format:
+{
+  "passages": [
+    {
+      "title": "Title of passage 1",
+      "text": "Full passage text here...",
+      "questions": "1. gap fill ___ sentence\n2. another question ___\n8. Statement for true false not given\n9. Another statement\n14. MCQ question\nA. option\nB. option\nC. option\n..."
+    },
+    {
+      "title": "Title of passage 2", 
+      "text": "Full passage text...",
+      "questions": "14. question...\n..."
+    },
+    {
+      "title": "Title of passage 3",
+      "text": "Full passage text...", 
+      "questions": "27. question...\n..."
+    }
+  ],
+  "answerKey": {
+    "1": "answer",
+    "8": "TRUE",
+    "9": "FALSE",
+    "14": "D"
+  }
+}
+
+Rules:
+- Extract the FULL passage text including all paragraphs
+- For gap fill: include full sentence with ___ for the blank
+- For True/False/Not Given: just the statement, no options needed
+- For Yes/No/Not Given: just the statement
+- For MCQ: question then A. B. C. D. options on new lines
+- For paragraph matching: just the statement
+- For matching people/headings: include the statement
+- Answer key must have all 40 answers
+- Return ONLY the JSON, no other text`
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-opus-4-5',
+        max_tokens: 8000,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: base64
+              }
+            },
+            {
+              type: 'text',
+              text: prompt
+            }
+          ]
+        }]
+      })
+    })
+
+    if (!response.ok) {
+      const err = await response.text()
+      return res.status(500).json({ error: 'Claude API error: ' + err })
     }
 
-    if (type === 'listening') {
-      const result = parseListeningPDF(fullText)
-      return res.status(200).json(result)
-    } else if (type === 'reading') {
-      const result = parseReadingPDF(fullText)
-      return res.status(200).json(result)
+    const data = await response.json()
+    const text = data.content[0].text.trim()
+
+    // Parse the JSON response
+    let parsed
+    try {
+      // Remove any markdown code blocks if present
+      const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+      parsed = JSON.parse(clean)
+    } catch (e) {
+      return res.status(500).json({ error: 'Could not parse Claude response', raw: text })
     }
 
-    return res.status(200).json({ text: fullText })
+    return res.status(200).json(parsed)
+
   } catch (err) {
     console.error('PDF parse error:', err)
-    return res.status(500).json({ error: 'Failed to parse PDF: ' + err.message })
+    return res.status(500).json({ error: 'Server error: ' + err.message })
   }
-}
-
-function parseListeningPDF(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  const sections = { s1: [], s2: [], s3: [], s4: [], answerKey: {} }
-  
-  let currentSection = null
-  let inAnswerKey = false
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    
-    // Detect answer key section
-    if (line.match(/key\s*listening|answer\s*key|answers/i)) {
-      inAnswerKey = true; continue
-    }
-    
-    // Detect sections
-    if (line.match(/section\s*1/i)) { currentSection = 's1'; inAnswerKey = false; continue }
-    if (line.match(/section\s*2/i)) { currentSection = 's2'; inAnswerKey = false; continue }
-    if (line.match(/section\s*3/i)) { currentSection = 's3'; inAnswerKey = false; continue }
-    if (line.match(/section\s*4/i)) { currentSection = 's4'; inAnswerKey = false; continue }
-
-    if (inAnswerKey) {
-      // Parse answer key lines like "1 theatre" or "1. theatre"
-      const m = line.match(/^(\d+)[.\s]+(.+)/)
-      if (m) sections.answerKey[m[1]] = m[2].trim()
-      continue
-    }
-
-    if (currentSection) {
-      sections[currentSection].push(line)
-    }
-  }
-
-  return {
-    section1: sections.s1.join('\n'),
-    section2: sections.s2.join('\n'),
-    section3: sections.s3.join('\n'),
-    section4: sections.s4.join('\n'),
-    answerKey: sections.answerKey,
-    rawText: text
-  }
-}
-
-function parseReadingPDF(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  
-  const passages = [
-    { title: '', text: '', questions: '' },
-    { title: '', text: '', questions: '' },
-    { title: '', text: '', questions: '' },
-  ]
-  const answerKey = {}
-  
-  let currentPassage = -1
-  let phase = 'passage' // 'passage' or 'questions'
-  let inAnswerKey = false
-  let buffer = []
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-
-    if (line.match(/key\s*reading|answer\s*key/i)) {
-      // Save buffer
-      if (currentPassage >= 0 && buffer.length) {
-        if (phase === 'passage') passages[currentPassage].text = buffer.join('\n')
-        else passages[currentPassage].questions = buffer.join('\n')
-      }
-      buffer = []; inAnswerKey = true; continue
-    }
-
-    if (inAnswerKey) {
-      const m = line.match(/^(\d+)[.\s]+(.+)/)
-      if (m) answerKey[m[1]] = m[2].trim()
-      continue
-    }
-
-    if (line.match(/reading passage\s*1|passage\s*1/i)) {
-      if (currentPassage >= 0 && buffer.length) {
-        if (phase === 'passage') passages[currentPassage].text = buffer.join('\n')
-        else passages[currentPassage].questions = buffer.join('\n')
-      }
-      buffer = []; currentPassage = 0; phase = 'passage'
-      passages[0].title = lines[i+1] || 'Passage 1'
-      continue
-    }
-    if (line.match(/reading passage\s*2|passage\s*2/i)) {
-      if (currentPassage >= 0 && buffer.length) {
-        if (phase === 'passage') passages[currentPassage].text = buffer.join('\n')
-        else passages[currentPassage].questions = buffer.join('\n')
-      }
-      buffer = []; currentPassage = 1; phase = 'passage'
-      passages[1].title = lines[i+1] || 'Passage 2'
-      continue
-    }
-    if (line.match(/reading passage\s*3|passage\s*3/i)) {
-      if (currentPassage >= 0 && buffer.length) {
-        if (phase === 'passage') passages[currentPassage].text = buffer.join('\n')
-        else passages[currentPassage].questions = buffer.join('\n')
-      }
-      buffer = []; currentPassage = 2; phase = 'passage'
-      passages[2].title = lines[i+1] || 'Passage 3'
-      continue
-    }
-
-    // Detect questions section
-    if (currentPassage >= 0 && phase === 'passage' && line.match(/^questions?\s+\d+/i)) {
-      passages[currentPassage].text = buffer.join('\n')
-      buffer = []; phase = 'questions'
-    }
-
-    if (currentPassage >= 0) buffer.push(line)
-  }
-
-  // Save last buffer
-  if (currentPassage >= 0 && buffer.length) {
-    if (phase === 'passage') passages[currentPassage].text = buffer.join('\n')
-    else passages[currentPassage].questions = buffer.join('\n')
-  }
-
-  return { passages, answerKey, rawText: text }
 }
