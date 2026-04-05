@@ -65,7 +65,7 @@ export default function App() {
 
   const [mySubs, setMySubs] = useState([])
 
-  const [tasks, setTasks] = useState({ task1_instructions: '', task1_image: '', task2_prompt: '' })
+  const [tasks, setTasks] = useState({ task1_instructions: '', task1_image: '', task2_prompt: '', set_name: '' })
   const [ans1, setAns1] = useState('')
   const [ans2, setAns2] = useState('')
   const [part, setPart] = useState(1)
@@ -74,6 +74,7 @@ export default function App() {
   const [showConfirm, setShowConfirm] = useState(false)
   const timerRef = useRef(null)
 
+  const [adminSetName, setAdminSetName] = useState('')
   const [adminTask1Img, setAdminTask1Img] = useState('')
   const [adminTask1Text, setAdminTask1Text] = useState('')
   const [adminTask2, setAdminTask2] = useState('')
@@ -161,6 +162,8 @@ export default function App() {
     }
     setTasks(data)
     setError('')
+    const el = document.getElementById('set-name-display')
+    if (el && data.set_name) el.textContent = data.set_name
     go('warn')
   }
 
@@ -188,6 +191,7 @@ export default function App() {
   async function loadAdmin() {
     const { data: t } = await supabase.from('tasks').select('*').eq('id', 1).single()
     if (t) {
+      setAdminSetName(t.set_name || '')
       setAdminTask1Text(t.task1_instructions || '')
       setAdminTask2(t.task2_prompt || '')
       if (t.task1_image) setImgPreview(t.task1_image)
@@ -213,6 +217,7 @@ export default function App() {
     const imgToSave = adminTask1Img || imgPreview
     await supabase.from('tasks').upsert({
       id: 1,
+      set_name: adminSetName,
       task1_instructions: adminTask1Text,
       task1_image: imgToSave,
       task2_prompt: adminTask2,
@@ -325,7 +330,8 @@ export default function App() {
           </div>
           <div className="card" style={{ border: '2px solid #185FA5', marginTop: 0 }}>
             <div style={{ fontWeight: 500, fontSize: 16 }}>Timed writing practice</div>
-            <div style={{ fontSize: 13, color: '#666', marginTop: 6, lineHeight: 1.6 }}>Full 60-minute IELTS Writing exam. Task 1 + Task 2. Timer cannot be paused once started.</div>
+            <div style={{ fontSize: 13, color: '#888', marginTop: 4, marginBottom: 6 }} id="set-name-display"></div>
+            <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>Full 60-minute IELTS Writing exam. Task 1 + Task 2. Timer cannot be paused once started.</div>
             {error && <div className="err">{error}</div>}
             <button className="btn btn-blue" style={{ marginTop: 12 }} onClick={goWarn}>Start timed practice</button>
           </div>
@@ -352,7 +358,8 @@ export default function App() {
         <div style={{ maxWidth: 460, margin: '3rem auto', padding: '0 1rem' }}>
           <div className="card" style={{ marginTop: 0, border: '1px solid #E24B4A' }}>
             <div style={{ fontSize: 28, marginBottom: 12, color: '#A32D2D' }}>⏱</div>
-            <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 14 }}>Before you begin</div>
+            <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>Before you begin</div>
+            {tasks.set_name && <div style={{ fontSize: 13, color: '#185FA5', fontWeight: 500, marginBottom: 12, background: '#EFF6FF', padding: '6px 10px', borderRadius: 6, display: 'inline-block' }}>{tasks.set_name}</div>}
             <div style={{ fontSize: 14, lineHeight: 2.1, color: '#555' }}>
               • Timer starts the moment you click <strong>Start</strong><br />
               • You have <strong>60 minutes</strong> total<br />
@@ -373,7 +380,7 @@ export default function App() {
       {screen === 'exam' && (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
           <div style={{ background: '#fff', borderBottom: '1px solid #eee', padding: '10px 1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-            <div className="logo" style={{ fontSize: 16 }}>IELTS Writing</div>
+            <div className="logo" style={{ fontSize: 16 }}>IELTS Writing{tasks.set_name ? ` · ${tasks.set_name}` : ''}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ display: 'flex', gap: 4, background: '#f5f5f5', borderRadius: 8, padding: 3 }}>
                 <button className={`ptab ${part === 1 ? 'on' : ''}`} onClick={() => setPart(1)}>Task 1</button>
@@ -462,6 +469,8 @@ export default function App() {
             <div>
               <div className="card" style={{ marginTop: 0 }}>
                 <div style={{ fontWeight: 500, marginBottom: 12 }}>Upload tasks</div>
+                <label className="lbl" style={{ marginTop: 0 }}>Set name / date label</label>
+                <input value={adminSetName} onChange={e => setAdminSetName(e.target.value)} placeholder="e.g. Set 1 · 04.05.2026" style={{ marginBottom: 12 }} />
                 <div style={{ background: '#f9f9f9', borderRadius: 8, padding: 12, marginBottom: 12 }}>
                   <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Task 1</div>
                   <label className="lbl" style={{ marginTop: 0 }}>Chart / graph image</label>
@@ -507,8 +516,7 @@ export default function App() {
                   : allSubs.map((s, i) => (
                     <div key={i} style={{ border: '1px solid #eee', borderRadius: 8, padding: 12, marginBottom: 10 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <strong style={{ fontSize: 14 }}>{s.full_name} <span style={{ fontWeight: 400, color: '#888' }}>@{s.username}</span></strong>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <strong style={{ fontSize: 14 }}>{s.full_name} <span style={{ fontWeight: 400, color: '#888' }}>@{s.username}</span></strong>                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 11, color: '#888' }}>{new Date(s.submitted_at).toLocaleString()}</span>
                           <button className="btn-green btn" onClick={() => downloadPDF(s)}>Download PDF</button>
                         </div>
