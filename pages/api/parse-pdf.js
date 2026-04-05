@@ -1,11 +1,11 @@
-import formidable from 'formidable'
-import fs from 'fs'
-
 export const maxDuration = 60
 
 export const config = {
   api: {
-    bodyParser: false,
+    bodyParser: {
+      sizeLimit: '50mb',
+    },
+    responseLimit: '50mb',
   },
 }
 
@@ -13,22 +13,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const form = formidable({ maxFileSize: 50 * 1024 * 1024 })
-    
-    const [fields, files] = await new Promise((resolve, reject) => {
-      form.parse(req, (err, fields, files) => {
-        if (err) reject(err)
-        else resolve([fields, files])
-      })
-    })
-
-    const type = Array.isArray(fields.type) ? fields.type[0] : fields.type
-    const file = Array.isArray(files.pdf) ? files.pdf[0] : files.pdf
-    
-    if (!file) return res.status(400).json({ error: 'No PDF file provided' })
-
-    const fileBuffer = fs.readFileSync(file.filepath)
-    const base64 = fileBuffer.toString('base64')
+    const { base64, type } = req.body
+    if (!base64) return res.status(400).json({ error: 'No PDF data provided' })
 
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) return res.status(500).json({ error: 'API key not configured' })
@@ -86,7 +72,7 @@ Return ONLY a JSON object in this exact format:
 }
 
 Rules:
-- Extract FULL passage text
+- Extract FULL passage text including all paragraphs
 - For gap fill: full sentence with ___ for blank
 - For True/False/Not Given or Yes/No/Not Given: just the statement
 - For MCQ: question then A. B. C. D. on new lines
