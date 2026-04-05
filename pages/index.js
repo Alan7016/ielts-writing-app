@@ -5,6 +5,48 @@ import Head from 'next/head'
 const ADMIN_USER = 'teacher'
 const ADMIN_PASS = 'ielts2024'
 
+function downloadPDF(sub) {
+  const wc = (t) => t ? t.trim().split(/\s+/).filter(Boolean).length : 0
+  const date = new Date(sub.submitted_at).toLocaleString()
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>IELTS Submission - ${sub.full_name}</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 2rem; color: #111; }
+  h1 { color: #c00; font-size: 22px; margin-bottom: 4px; }
+  .meta { font-size: 13px; color: #666; margin-bottom: 2rem; border-bottom: 1px solid #eee; padding-bottom: 1rem; }
+  h2 { font-size: 16px; background: #f5f5f5; padding: 8px 12px; border-radius: 4px; margin-top: 2rem; }
+  .wc { font-size: 12px; color: #888; margin: 4px 0 12px; }
+  .answer { font-size: 14px; line-height: 1.8; white-space: pre-wrap; border: 1px solid #eee; padding: 1rem; border-radius: 4px; }
+  @media print { body { margin: 1rem; } }
+</style>
+</head>
+<body>
+<h1>IELTS Writing Practice</h1>
+<div class="meta">
+  <strong>${sub.full_name}</strong> (@${sub.username})<br>
+  Submitted: ${date}
+</div>
+<h2>Task 1</h2>
+<div class="wc">Word count: ${wc(sub.task1_answer)}</div>
+<div class="answer">${sub.task1_answer || '(No answer submitted)'}</div>
+<h2>Task 2</h2>
+<div class="wc">Word count: ${wc(sub.task2_answer)}</div>
+<div class="answer">${sub.task2_answer || '(No answer submitted)'}</div>
+</body>
+</html>`
+
+  const blob = new Blob([html], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const win = window.open(url, '_blank')
+  win.onload = () => {
+    win.print()
+    URL.revokeObjectURL(url)
+  }
+}
+
 export default function App() {
   const [screen, setScreen] = useState('auth')
   const [authTab, setAuthTab] = useState('login')
@@ -12,7 +54,6 @@ export default function App() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Auth fields
   const [loginUser, setLoginUser] = useState('')
   const [loginPass, setLoginPass] = useState('')
   const [regName, setRegName] = useState('')
@@ -22,10 +63,8 @@ export default function App() {
   const [adminUser, setAdminUser] = useState('')
   const [adminPass, setAdminPass] = useState('')
 
-  // Home
   const [mySubs, setMySubs] = useState([])
 
-  // Exam
   const [tasks, setTasks] = useState({ task1_instructions: '', task1_image: '', task2_prompt: '' })
   const [ans1, setAns1] = useState('')
   const [ans2, setAns2] = useState('')
@@ -35,7 +74,6 @@ export default function App() {
   const [showConfirm, setShowConfirm] = useState(false)
   const timerRef = useRef(null)
 
-  // Admin
   const [adminTask1Img, setAdminTask1Img] = useState('')
   const [adminTask1Text, setAdminTask1Text] = useState('')
   const [adminTask2, setAdminTask2] = useState('')
@@ -63,7 +101,6 @@ export default function App() {
 
   const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
   const wc = (t) => t ? t.trim().split(/\s+/).filter(Boolean).length : 0
-
   const go = (s) => { setScreen(s); setError('') }
 
   async function doRegister() {
@@ -196,13 +233,15 @@ export default function App() {
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #111; font-size: 15px; }
-        input, textarea, select { width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; background: #fff; color: #111; resize: vertical; }
+        input, textarea { width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; background: #fff; color: #111; resize: vertical; }
         input:focus, textarea:focus { outline: none; border-color: #185FA5; }
         .btn { padding: 10px 20px; border: 1px solid #ddd; border-radius: 8px; background: #fff; color: #111; font-size: 14px; cursor: pointer; font-family: inherit; display: block; width: 100%; margin-top: 10px; }
         .btn:hover { background: #f0f0f0; }
         .btn-blue { background: #185FA5; color: #fff; border-color: #185FA5; }
         .btn-blue:hover { background: #0C447C; }
         .btn-red { background: #A32D2D; color: #fff; border-color: #A32D2D; width: auto; margin-top: 0; }
+        .btn-green { background: #0F6E56; color: #fff; border-color: #0F6E56; width: auto; margin-top: 0; padding: 6px 12px; font-size: 12px; }
+        .btn-green:hover { background: #085041; }
         .btn-sm { width: auto; margin-top: 0; padding: 7px 14px; font-size: 13px; }
         .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 1.25rem; margin-top: 12px; }
         .lbl { font-size: 13px; color: #666; display: block; margin-top: 12px; margin-bottom: 5px; }
@@ -262,11 +301,10 @@ export default function App() {
 
             {authTab === 'admin' && (
               <div>
-                <div style={{ fontSize: 13, color: '#888', marginBottom: 10 }}>Teacher / Admin access</div>
                 <label className="lbl" style={{ marginTop: 0 }}>Admin username</label>
-                <input value={adminUser} onChange={e => setAdminUser(e.target.value)} placeholder="teacher" />
+                <input value={adminUser} onChange={e => setAdminUser(e.target.value)} placeholder="Username" />
                 <label className="lbl">Admin password</label>
-                <input type="password" value={adminPass} onChange={e => setAdminPass(e.target.value)} placeholder="ielts2024" onKeyDown={e => e.key === 'Enter' && doAdminLogin()} />
+                <input type="password" value={adminPass} onChange={e => setAdminPass(e.target.value)} placeholder="Password" onKeyDown={e => e.key === 'Enter' && doAdminLogin()} />
                 {error && <div className="err">{error}</div>}
                 <button className="btn btn-blue" onClick={doAdminLogin}>Enter admin panel</button>
               </div>
@@ -296,9 +334,12 @@ export default function App() {
             {mySubs.length === 0
               ? <div style={{ fontSize: 13, color: '#888' }}>No submissions yet. Start your first practice!</div>
               : mySubs.map((s, i) => (
-                <div key={i} style={{ borderTop: '1px solid #eee', padding: '8px 0' }}>
-                  <div style={{ fontWeight: 500, fontSize: 14 }}>{new Date(s.submitted_at).toLocaleString()}</div>
-                  <div style={{ fontSize: 13, color: '#888', marginTop: 2 }}>Task 1: {wc(s.task1_answer)} words · Task 2: {wc(s.task2_answer)} words</div>
+                <div key={i} style={{ borderTop: '1px solid #eee', padding: '8px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: 14 }}>{new Date(s.submitted_at).toLocaleString()}</div>
+                    <div style={{ fontSize: 13, color: '#888', marginTop: 2 }}>Task 1: {wc(s.task1_answer)} words · Task 2: {wc(s.task2_answer)} words</div>
+                  </div>
+                  <button className="btn-green btn" onClick={() => downloadPDF(s)}>Download PDF</button>
                 </div>
               ))
             }
@@ -467,7 +508,10 @@ export default function App() {
                     <div key={i} style={{ border: '1px solid #eee', borderRadius: 8, padding: 12, marginBottom: 10 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                         <strong style={{ fontSize: 14 }}>{s.full_name} <span style={{ fontWeight: 400, color: '#888' }}>@{s.username}</span></strong>
-                        <span style={{ fontSize: 11, color: '#888' }}>{new Date(s.submitted_at).toLocaleString()}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 11, color: '#888' }}>{new Date(s.submitted_at).toLocaleString()}</span>
+                          <button className="btn-green btn" onClick={() => downloadPDF(s)}>Download PDF</button>
+                        </div>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                         <div>
