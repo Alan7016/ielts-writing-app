@@ -1,9 +1,11 @@
+import formidable from 'formidable'
+import fs from 'fs'
+
 export const maxDuration = 60
+
 export const config = {
   api: {
-    bodyParser: {
-      sizeLimit: '50mb',
-    },
+    bodyParser: false,
   },
 }
 
@@ -11,8 +13,22 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { base64, type } = req.body
-    if (!base64) return res.status(400).json({ error: 'No PDF data provided' })
+    const form = formidable({ maxFileSize: 50 * 1024 * 1024 })
+    
+    const [fields, files] = await new Promise((resolve, reject) => {
+      form.parse(req, (err, fields, files) => {
+        if (err) reject(err)
+        else resolve([fields, files])
+      })
+    })
+
+    const type = Array.isArray(fields.type) ? fields.type[0] : fields.type
+    const file = Array.isArray(files.pdf) ? files.pdf[0] : files.pdf
+    
+    if (!file) return res.status(400).json({ error: 'No PDF file provided' })
+
+    const fileBuffer = fs.readFileSync(file.filepath)
+    const base64 = fileBuffer.toString('base64')
 
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) return res.status(500).json({ error: 'API key not configured' })
@@ -35,10 +51,10 @@ Return ONLY a JSON object in this exact format:
 }
 
 Rules:
-- For gap fill questions: include the full sentence with ___ where the blank is
-- For MCQ: include the question then options on new lines as A. B. C.
-- For matching: include the statement with ___ at the end
-- Answer key must have all 40 answers
+- For gap fill: include full sentence with ___ where the blank is
+- For MCQ: include question then A. B. C. options on new lines
+- For matching: include statement with ___ at end
+- Answer key must have all 40 answers numbered 1-40
 - Return ONLY the JSON, no other text`
 
       : `This is an IELTS Reading test PDF. Extract ALL passages and questions.
@@ -49,35 +65,31 @@ Return ONLY a JSON object in this exact format:
     {
       "title": "Title of passage 1",
       "text": "Full passage text here...",
-      "questions": "1. gap fill ___ sentence\n2. another question ___\n8. Statement for true false not given\n9. Another statement\n14. MCQ question\nA. option\nB. option\nC. option\n..."
+      "questions": "1. gap fill ___ sentence\n8. Statement for true false not given\n14. MCQ question\nA. option\nB. option\nC. option"
     },
     {
-      "title": "Title of passage 2", 
+      "title": "Title of passage 2",
       "text": "Full passage text...",
-      "questions": "14. question...\n..."
+      "questions": "14. question..."
     },
     {
       "title": "Title of passage 3",
-      "text": "Full passage text...", 
-      "questions": "27. question...\n..."
+      "text": "Full passage text...",
+      "questions": "27. question..."
     }
   ],
   "answerKey": {
     "1": "answer",
     "8": "TRUE",
-    "9": "FALSE",
     "14": "D"
   }
 }
 
 Rules:
-- Extract the FULL passage text including all paragraphs
-- For gap fill: include full sentence with ___ for the blank
-- For True/False/Not Given: just the statement, no options needed
-- For Yes/No/Not Given: just the statement
-- For MCQ: question then A. B. C. D. options on new lines
-- For paragraph matching: just the statement
-- For matching people/headings: include the statement
+- Extract FULL passage text
+- For gap fill: full sentence with ___ for blank
+- For True/False/Not Given or Yes/No/Not Given: just the statement
+- For MCQ: question then A. B. C. D. on new lines
 - Answer key must have all 40 answers
 - Return ONLY the JSON, no other text`
 
@@ -119,14 +131,12 @@ Rules:
     const data = await response.json()
     const text = data.content[0].text.trim()
 
-    // Parse the JSON response
     let parsed
     try {
-      // Remove any markdown code blocks if present
       const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
       parsed = JSON.parse(clean)
     } catch (e) {
-      return res.status(500).json({ error: 'Could not parse Claude response', raw: text })
+      return res.status(500).json({ error: 'Could not parse response', raw: text })
     }
 
     return res.status(200).json(parsed)
