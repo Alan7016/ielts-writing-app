@@ -142,6 +142,9 @@ export default function App() {
   const ans2Ref = useRef('')
   const submittedRef = useRef(false)
   const [savedIndicator, setSavedIndicator] = useState('')
+  const [showExitWarning, setShowExitWarning] = useState(false)
+  const examStartTimeRef = useRef(null)
+  const elapsedRef = useRef(0)
   const [writingPart, setWritingPart] = useState(1)
   const [timeLeft, setTimeLeft] = useState(3600)
   const [timerRunning, setTimerRunning] = useState(false)
@@ -213,12 +216,22 @@ export default function App() {
     }
   }, [])
 
-  // Writing timer
+  // Writing timer — uses real wall clock so it never stops
   useEffect(() => {
     if (timerRunning) {
+      examStartTimeRef.current = examStartTimeRef.current || Date.now()
       timerRef.current = setInterval(() => {
-        setTimeLeft(t => { if (t <= 1) { clearInterval(timerRef.current); setTimerRunning(false); handleWritingSubmit(); return 0 } return t - 1 })
-      }, 1000)
+        const elapsed = Math.floor((Date.now() - examStartTimeRef.current) / 1000)
+        const remaining = 3600 - elapsed
+        if (remaining <= 0) {
+          clearInterval(timerRef.current)
+          setTimerRunning(false)
+          setTimeLeft(0)
+          handleWritingSubmit()
+        } else {
+          setTimeLeft(remaining)
+        }
+      }, 500)
     }
     return () => clearInterval(timerRef.current)
   }, [timerRunning])
@@ -232,6 +245,40 @@ export default function App() {
     }
     return () => clearInterval(readTimerRef.current)
   }, [readTimerRunning])
+
+  // Fullscreen exit warning
+  useEffect(() => {
+    if (screen !== 'writing-exam') return
+    function handleFullscreenChange() {
+      const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement)
+      if (!isFullscreen && screen === 'writing-exam' && timerRunning) {
+        setShowExitWarning(true)
+      }
+    }
+    function handleVisibilityChange() {
+      // Timer is wall-clock based so it keeps running, just show warning
+      if (document.hidden && screen === 'writing-exam' && timerRunning) {
+        setShowExitWarning(true)
+      }
+    }
+    function handleBeforeUnload(e) {
+      if (screen === 'writing-exam' && timerRunning) {
+        e.preventDefault()
+        e.returnValue = 'Your exam is in progress. Leaving will submit your current work.'
+        return e.returnValue
+      }
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [screen, timerRunning])
 
   // Listen for scores from iframe
   useEffect(() => {
@@ -352,7 +399,15 @@ export default function App() {
 
   function startWriting() {
     setAns1(''); setAns2(''); ans1Ref.current = ''; ans2Ref.current = ''; submittedRef.current = false
+    examStartTimeRef.current = Date.now()
+    elapsedRef.current = 0
     setTimeLeft(3600); setWritingPart(1); setTimerRunning(true); go('writing-exam')
+    // Request fullscreen
+    try {
+      const el = document.documentElement
+      if (el.requestFullscreen) el.requestFullscreen()
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen()
+    } catch(e) {}
   }
 
   async function handleWritingSubmit() {
