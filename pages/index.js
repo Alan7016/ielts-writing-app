@@ -374,10 +374,11 @@ export default function App() {
     reader.onload = async (e) => {
       const base64 = e.target.result.split(',')[1]
       try {
-        const formData = new FormData()
-        formData.append('pdf', file)
-        formData.append('type', 'listening')
-        const res = await fetch('/api/parse-pdf', { method: 'POST', body: formData })
+        const res = await fetch('/api/parse-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ base64, type: 'listening' })
+        })
         if (!res.ok) { setPdfMsg('Server error: ' + res.status); setPdfParsing(false); return }
         const data = await res.json()
         if (data.error) { setPdfMsg('Error: ' + data.error); setPdfParsing(false); return }
@@ -402,10 +403,11 @@ export default function App() {
     reader.onload = async (e) => {
       const base64 = e.target.result.split(',')[1]
       try {
-        const formData = new FormData()
-        formData.append('pdf', file)
-        formData.append('type', 'reading')
-        const res = await fetch('/api/parse-pdf', { method: 'POST', body: formData })
+        const res = await fetch('/api/parse-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ base64, type: 'reading' })
+        })
         if (!res.ok) { setPdfMsg('Server error: ' + res.status); setPdfParsing(false); return }
         const data = await res.json()
         if (data.error) { setPdfMsg('Error: ' + data.error); setPdfParsing(false); return }
