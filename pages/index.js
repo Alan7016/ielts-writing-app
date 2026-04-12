@@ -105,6 +105,151 @@ function downloadPDF(sub) {
   win.onload = () => { win.print(); URL.revokeObjectURL(url) }
 }
 
+function Set2AdminPanel() {
+  const [uploading, setUploading] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [subs, setSubs] = useState([])
+  const [selected, setSelected] = useState(null)
+  const [loaded, setLoaded] = useState(false)
+
+  const supabase_client = supabase
+
+  async function load() {
+    const { data } = await supabase_client.from('set2_submissions').select('*').order('completed_at', { ascending: false })
+    setSubs(data || [])
+    setLoaded(true)
+  }
+
+  async function uploadHtml(file, id) {
+    if (!file) return
+    setUploading(true); setMsg('Uploading ' + id + '...')
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const content = e.target.result
+      await supabase_client.from('set2_html').upsert({ id, content, updated_at: new Date().toISOString() })
+      setMsg(id + ' uploaded! ✓')
+      setUploading(false)
+      setTimeout(() => setMsg(''), 3000)
+    }
+    reader.readAsText(file)
+  }
+
+  const wc = (t) => t ? t.trim().split(/\s+/).filter(Boolean).length : 0
+
+  if (!loaded) return (
+    <div className="card" style={{ marginTop: 0 }}>
+      <button className="btn btn-blue btn-sm" onClick={load}>Load Set 2 Data</button>
+    </div>
+  )
+
+  if (selected) return (
+    <div className="card" style={{ marginTop: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ fontWeight: 500, fontSize: 15 }}>{selected.full_name} (@{selected.username})</div>
+        <button className="btn btn-sm" onClick={() => setSelected(null)}>← Back</button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+        <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
+          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6 }}>Listening</div>
+          {selected.listening_score !== null
+            ? <div>
+                <div style={{ fontSize: 20, fontWeight: 600, color: '#185FA5' }}>{selected.listening_score}/40</div>
+                <div style={{ fontSize: 13, color: '#888' }}>Band {selected.listening_band}</div>
+              </div>
+            : <div style={{ fontSize: 13, color: '#888' }}>Not submitted</div>
+          }
+        </div>
+        <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
+          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6 }}>Reading</div>
+          {selected.reading_score !== null
+            ? <div>
+                <div style={{ fontSize: 20, fontWeight: 600, color: '#185FA5' }}>{selected.reading_score}/40</div>
+                <div style={{ fontSize: 13, color: '#888' }}>Band {selected.reading_band}</div>
+              </div>
+            : <div style={{ fontSize: 13, color: '#888' }}>Not submitted</div>
+          }
+        </div>
+      </div>
+
+      {selected.listening_results && selected.listening_results.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Listening — Question Breakdown</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
+            {selected.listening_results.map((r, i) => (
+              <div key={i} style={{ background: r.isCorrect ? '#E1F5EE' : '#FEF2F2', border: '1px solid ' + (r.isCorrect ? '#9FE1CB' : '#FCA5A5'), borderRadius: 6, padding: '6px 4px', textAlign: 'center', fontSize: 11 }}>
+                <div style={{ fontWeight: 600 }}>Q{r.question}</div>
+                <div style={{ color: r.isCorrect ? '#0F6E56' : '#A32D2D' }}>{r.isCorrect ? '✓' : '✗'}</div>
+                {!r.isCorrect && <div style={{ color: '#666', fontSize: 10 }}>{r.userAnswer || '—'}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {selected.reading_results_html && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Reading — Question Breakdown</div>
+          <div style={{ fontSize: 12, maxHeight: 300, overflowY: 'auto', border: '1px solid #eee', borderRadius: 8, padding: 10 }} dangerouslySetInnerHTML={{ __html: selected.reading_results_html }} />
+        </div>
+      )}
+
+      <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Writing — Task 1</div>
+      <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 13, lineHeight: 1.7, marginBottom: 4, whiteSpace: 'pre-wrap', maxHeight: 250, overflowY: 'auto' }}>
+        {selected.writing_task1 || '(Not submitted)'}
+      </div>
+      <div style={{ fontSize: 12, color: '#888', marginBottom: 16 }}>{wc(selected.writing_task1)} words</div>
+
+      <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Writing — Task 2</div>
+      <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 13, lineHeight: 1.7, marginBottom: 4, whiteSpace: 'pre-wrap', maxHeight: 250, overflowY: 'auto' }}>
+        {selected.writing_task2 || '(Not submitted)'}
+      </div>
+      <div style={{ fontSize: 12, color: '#888' }}>{wc(selected.writing_task2)} words</div>
+    </div>
+  )
+
+  return (
+    <div style={{ marginTop: 0 }}>
+      {/* HTML Upload */}
+      <div className="card" style={{ marginTop: 0 }}>
+        <div style={{ fontWeight: 500, marginBottom: 12 }}>Set 2 — Upload HTML files</div>
+        {msg && <div style={{ fontSize: 13, color: '#0F6E56', marginBottom: 10 }}>{msg}</div>}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {['listening','reading','writing'].map(id => (
+            <label key={id} style={{ display: 'inline-block', padding: '8px 16px', background: '#185FA5', color: '#fff', borderRadius: 8, cursor: uploading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 500, opacity: uploading ? 0.6 : 1 }}>
+              {uploading ? 'Uploading...' : 'Upload ' + id.charAt(0).toUpperCase() + id.slice(1) + ' HTML'}
+              <input type="file" accept=".html" style={{ display: 'none' }} onChange={e => uploadHtml(e.target.files[0], id)} disabled={uploading} />
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Student results */}
+      <div className="card">
+        <div style={{ fontWeight: 500, marginBottom: 12 }}>Set 2 Submissions ({subs.length})</div>
+        {subs.length === 0
+          ? <div style={{ fontSize: 13, color: '#888' }}>No submissions yet.</div>
+          : subs.map(s => (
+            <div key={s.id} onClick={() => setSelected(s)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', border: '1px solid #eee', borderRadius: 8, marginBottom: 6, cursor: 'pointer', background: '#fafafa' }}>
+              <div>
+                <div style={{ fontWeight: 500, fontSize: 14 }}>{s.full_name}</div>
+                <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                  {s.listening_score !== null ? 'L: ' + s.listening_score + '/40' : 'L: —'}
+                  {' · '}
+                  {s.reading_score !== null ? 'R: ' + s.reading_score + '/40' : 'R: —'}
+                  {' · '}
+                  {s.writing_task1 ? 'W: ✓' : 'W: —'}
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: '#185FA5' }}>View →</div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [screen, setScreen] = useState('auth')
   const [authTab, setAuthTab] = useState('login')
@@ -860,20 +1005,30 @@ export default function App() {
             <button className="btn btn-sm" onClick={logout}>Sign out</button>
           </div>
           <div className="card" style={{ border: '2px solid #185FA5', marginTop: 0 }}>
-            <div style={{ fontWeight: 500, fontSize: 16 }}>Full Mock Test</div>
-            <div style={{ display: 'flex', gap: 8, margin: '10px 0', flexWrap: 'wrap' }}>
-              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Listening 30 min</div>
-              <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
-              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Reading 60 min</div>
-              <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
-              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Writing 60 min</div>
-            </div>
-            <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>Each module starts when you press Start. Complete all three in order.</div>
+            <div style={{ fontWeight: 500, fontSize: 16 }}>Writing Practice</div>
+            <div style={{ fontSize: 13, color: '#666', marginTop: 6, lineHeight: 1.6 }}>60 minutes · Task 1 + Task 2</div>
             {error && <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#A32D2D', marginTop: 10 }}>{error}</div>}
-            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-              <button className="btn btn-blue btn-sm" onClick={goListeningWarn}>Start Listening</button>
-              <button className="btn btn-sm" onClick={goReadingWarn}>Reading only</button>
-              <button className="btn btn-sm" onClick={goWritingWarn}>Writing only</button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button className="btn btn-blue btn-sm" onClick={goWritingWarn}>Start Writing</button>
+            </div>
+          </div>
+
+          <div className="card" style={{ border: '2px solid #0F6E56', marginTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: 500, fontSize: 16 }}>Set 2 — Full Mock Test</div>
+                <div style={{ display: 'flex', gap: 6, margin: '8px 0', flexWrap: 'wrap' }}>
+                  <div style={{ background: '#E1F5EE', color: '#0F6E56', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Listening</div>
+                  <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
+                  <div style={{ background: '#E1F5EE', color: '#0F6E56', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Reading</div>
+                  <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
+                  <div style={{ background: '#E1F5EE', color: '#0F6E56', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Writing</div>
+                </div>
+                <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>Complete all three modules in order. Real mock conditions.</div>
+              </div>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <a href="/set2" style={{ display: 'inline-block', padding: '8px 18px', background: '#0F6E56', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, textDecoration: 'none' }}>Go to Set 2 →</a>
             </div>
           </div>
           <div className="card">
@@ -1151,6 +1306,9 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* SET 2 TAB */}
+          {adminTab === 'set2' && <Set2AdminPanel />}
 
           {/* SUBMISSIONS TAB */}
           {adminTab === 'submissions' && (
