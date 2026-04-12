@@ -269,11 +269,11 @@ export default function Set2() {
                 {!progress.listening && <div style={{ fontSize: 12, color: '#A32D2D', marginTop: 4 }}>Complete Listening first</div>}
               </div>
               {progress.reading
-                ? <div style={{ color: '#0F6E56', fontWeight: 500, fontSize: 14 }}>Completed</div>
-                : <button
-                    className={`btn btn-sm ${progress.listening ? 'btn-blue' : 'btn-gray'}`}
-                    onClick={() => { if (progress.listening) setScreen('reading') else setError('You must complete Listening before Reading.') }}
-                  >Start</button>
+                ? (<div style={{ color: '#0F6E56', fontWeight: 500, fontSize: 14 }}>Completed</div>)
+                : (<button
+                    className={'btn btn-sm ' + (progress.listening ? 'btn-blue' : 'btn-gray')}
+                    onClick={() => { if (progress.listening) { setScreen('reading') } else { setError('You must complete Listening before Reading.') } }}
+                  >Start</button>)
               }
             </div>
           </div>
@@ -289,11 +289,11 @@ export default function Set2() {
                 {!progress.reading && <div style={{ fontSize: 12, color: '#A32D2D', marginTop: 4 }}>Complete Reading first</div>}
               </div>
               {progress.writing
-                ? <div style={{ color: '#0F6E56', fontWeight: 500, fontSize: 14 }}>Completed</div>
-                : <button
-                    className={`btn btn-sm ${progress.reading ? 'btn-blue' : 'btn-gray'}`}
-                    onClick={() => { if (progress.reading) setScreen('writing-warn') else setError('You must complete Reading before Writing.') }}
-                  >Start</button>
+                ? (<div style={{ color: '#0F6E56', fontWeight: 500, fontSize: 14 }}>Completed</div>)
+                : (<button
+                    className={'btn btn-sm ' + (progress.reading ? 'btn-blue' : 'btn-gray')}
+                    onClick={() => { if (progress.reading) { setScreen('writing-warn') } else { setError('You must complete Reading before Writing.') } }}
+                  >Start</button>)
               }
             </div>
           </div>
