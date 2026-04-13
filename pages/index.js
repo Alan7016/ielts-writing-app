@@ -268,6 +268,147 @@ function Set2AdminPanel() {
   )
 }
 
+
+function SubmissionsPanel({ writingSubs, listeningSubs, readingSubs, wc, downloadPDF, supabase }) {
+  const [activeSet, setActiveSet] = useState('set1')
+  const [set2subs, setSet2subs] = useState([])
+  const [set2loaded, setSet2loaded] = useState(false)
+  const [selected, setSelected] = useState(null)
+
+  async function loadSet2() {
+    const { data } = await supabase.from('set2_submissions').select('*').order('completed_at', { ascending: false })
+    setSet2subs(data || [])
+    setSet2loaded(true)
+  }
+
+  // Merge Set 1 data by username
+  const set1students = {}
+  listeningSubs.forEach(s => {
+    if (!set1students[s.username]) set1students[s.username] = { username: s.username, full_name: s.full_name }
+    set1students[s.username].listening_score = s.score
+    set1students[s.username].listening_at = s.submitted_at
+  })
+  readingSubs.forEach(s => {
+    if (!set1students[s.username]) set1students[s.username] = { username: s.username, full_name: s.full_name }
+    set1students[s.username].reading_score = s.score
+  })
+  writingSubs.forEach(s => {
+    if (!set1students[s.username]) set1students[s.username] = { username: s.username, full_name: s.full_name }
+    set1students[s.username].task1 = s.task1_answer
+    set1students[s.username].task2 = s.task2_answer
+    set1students[s.username].writing_at = s.submitted_at
+    set1students[s.username]._raw = s
+  })
+  const set1list = Object.values(set1students)
+
+  if (selected) {
+    const isSet2 = activeSet === 'set2'
+    const t1 = isSet2 ? selected.writing_task1 : selected.task1
+    const t2 = isSet2 ? selected.writing_task2 : selected.task2
+    const lScore = isSet2 ? selected.listening_score : selected.listening_score
+    const rScore = isSet2 ? selected.reading_score : selected.reading_score
+    return (
+      <div>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+          <div style={{ fontWeight:500, fontSize:15 }}>{selected.full_name} <span style={{ color:'#888', fontWeight:400, fontSize:13 }}>@{selected.username}</span></div>
+          <button className="btn btn-sm" onClick={() => setSelected(null)}>← Back</button>
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
+          <div className="card" style={{ marginTop:0, textAlign:'center' }}>
+            <div style={{ fontSize:12, color:'#888', marginBottom:4 }}>Listening</div>
+            {lScore != null
+              ? <div style={{ fontSize:24, fontWeight:700, color:'#185FA5' }}>{lScore}<span style={{ fontSize:14, color:'#888' }}>/40</span></div>
+              : <div style={{ fontSize:13, color:'#aaa' }}>—</div>}
+          </div>
+          <div className="card" style={{ marginTop:0, textAlign:'center' }}>
+            <div style={{ fontSize:12, color:'#888', marginBottom:4 }}>Reading</div>
+            {rScore != null
+              ? <div style={{ fontSize:24, fontWeight:700, color:'#185FA5' }}>{rScore}<span style={{ fontSize:14, color:'#888' }}>/40</span></div>
+              : <div style={{ fontSize:13, color:'#aaa' }}>—</div>}
+          </div>
+        </div>
+        <div className="card" style={{ marginTop:0, marginBottom:12 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+            <div style={{ fontWeight:500, fontSize:13 }}>Task 1 <span style={{ color:'#888', fontWeight:400 }}>({wc(t1)} words)</span></div>
+            {!isSet2 && selected._raw && <button className="btn btn-green btn-sm" onClick={() => downloadPDF(selected._raw)}>PDF</button>}
+          </div>
+          <div style={{ fontSize:13, lineHeight:1.8, background:'#f9f9f9', borderRadius:8, padding:12, whiteSpace:'pre-wrap', maxHeight:250, overflowY:'auto' }}>
+            {t1 || <span style={{ color:'#aaa' }}>Not submitted</span>}
+          </div>
+        </div>
+        <div className="card" style={{ marginTop:0 }}>
+          <div style={{ fontWeight:500, fontSize:13, marginBottom:8 }}>Task 2 <span style={{ color:'#888', fontWeight:400 }}>({wc(t2)} words)</span></div>
+          <div style={{ fontSize:13, lineHeight:1.8, background:'#f9f9f9', borderRadius:8, padding:12, whiteSpace:'pre-wrap', maxHeight:250, overflowY:'auto' }}>
+            {t2 || <span style={{ color:'#aaa' }}>Not submitted</span>}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {/* Set toggle */}
+      <div style={{ display:'flex', gap:8, marginBottom:16 }}>
+        <button onClick={() => setActiveSet('set1')} style={{ padding:'8px 20px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:500, background: activeSet==='set1'?'#185FA5':'#f0f0f0', color: activeSet==='set1'?'#fff':'#555' }}>Set 1</button>
+        <button onClick={() => { setActiveSet('set2'); if(!set2loaded) loadSet2() }} style={{ padding:'8px 20px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:500, background: activeSet==='set2'?'#0F6E56':'#f0f0f0', color: activeSet==='set2'?'#fff':'#555' }}>Set 2</button>
+      </div>
+
+      {/* SET 1 */}
+      {activeSet === 'set1' && (
+        <div className="card" style={{ marginTop:0 }}>
+          <div style={{ fontWeight:500, marginBottom:12 }}>Set 1 — Students ({set1list.length})</div>
+          {set1list.length === 0
+            ? <div style={{ fontSize:13, color:'#888' }}>No submissions yet.</div>
+            : set1list.map((s,i) => (
+              <div key={i} onClick={() => setSelected(s)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 12px', border:'1px solid #eee', borderRadius:8, marginBottom:6, cursor:'pointer', background:'#fafafa' }}>
+                <div>
+                  <div style={{ fontWeight:500, fontSize:14 }}>{s.full_name} <span style={{ color:'#888', fontWeight:400, fontSize:13 }}>@{s.username}</span></div>
+                  <div style={{ fontSize:12, color:'#888', marginTop:3 }}>
+                    {s.listening_score != null ? `L: ${s.listening_score}/40` : 'L: —'}
+                    {' · '}
+                    {s.reading_score != null ? `R: ${s.reading_score}/40` : 'R: —'}
+                    {' · '}
+                    {s.task1 ? `W: ${wc(s.task1)}+${wc(s.task2)} words` : 'W: —'}
+                  </div>
+                </div>
+                <div style={{ fontSize:12, color:'#185FA5' }}>View →</div>
+              </div>
+            ))
+          }
+        </div>
+      )}
+
+      {/* SET 2 */}
+      {activeSet === 'set2' && (
+        <div className="card" style={{ marginTop:0 }}>
+          <div style={{ fontWeight:500, marginBottom:12 }}>Set 2 — Students ({set2subs.length})</div>
+          {!set2loaded
+            ? <div style={{ fontSize:13, color:'#888' }}>Loading...</div>
+            : set2subs.length === 0
+              ? <div style={{ fontSize:13, color:'#888' }}>No submissions yet.</div>
+              : set2subs.map((s,i) => (
+                <div key={i} onClick={() => setSelected(s)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 12px', border:'1px solid #eee', borderRadius:8, marginBottom:6, cursor:'pointer', background:'#fafafa' }}>
+                  <div>
+                    <div style={{ fontWeight:500, fontSize:14 }}>{s.full_name} <span style={{ color:'#888', fontWeight:400, fontSize:13 }}>@{s.username}</span></div>
+                    <div style={{ fontSize:12, color:'#888', marginTop:3 }}>
+                      {s.listening_score != null ? `L: ${s.listening_score}/40` : 'L: —'}
+                      {' · '}
+                      {s.reading_score != null ? `R: ${s.reading_score}/40` : 'R: —'}
+                      {' · '}
+                      {s.writing_task1 ? `W: ${wc(s.writing_task1)}+${wc(s.writing_task2)} words` : 'W: —'}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:12, color:'#0F6E56' }}>View →</div>
+                </div>
+              ))
+          }
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   const [screen, setScreen] = useState('auth')
   const [authTab, setAuthTab] = useState('login')
@@ -1354,46 +1495,7 @@ export default function App() {
           {adminTab === 'set2' && <Set2AdminPanel />}
 
           {/* SUBMISSIONS TAB */}
-          {adminTab === 'submissions' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 12 }}>
-              <div className="card" style={{ marginTop: 0 }}>
-                <div style={{ fontWeight: 500, marginBottom: 10 }}>Listening ({listeningSubs.length})</div>
-                {listeningSubs.length === 0 ? <div style={{ color:'#888', fontSize:13 }}>No submissions yet.</div>
-                  : listeningSubs.map((s,i) => (
-                    <div key={i} style={{ borderTop:'1px solid #eee', padding:'8px 0' }}>
-                      <div style={{ fontWeight:500, fontSize:13 }}>{s.full_name} <span style={{ color:'#888', fontWeight:400 }}>@{s.username}</span></div>
-                      <div style={{ fontSize:12, color:'#888' }}>{new Date(s.submitted_at).toLocaleString()}</div>
-                      <div style={{ fontSize:14, color:'#185FA5', fontWeight:500, marginTop:2 }}>Score: {s.score} / 40</div>
-                    </div>
-                  ))}
-              </div>
-              <div className="card" style={{ marginTop: 0 }}>
-                <div style={{ fontWeight: 500, marginBottom: 10 }}>Reading ({readingSubs.length})</div>
-                {readingSubs.length === 0 ? <div style={{ color:'#888', fontSize:13 }}>No submissions yet.</div>
-                  : readingSubs.map((s,i) => (
-                    <div key={i} style={{ borderTop:'1px solid #eee', padding:'8px 0' }}>
-                      <div style={{ fontWeight:500, fontSize:13 }}>{s.full_name} <span style={{ color:'#888', fontWeight:400 }}>@{s.username}</span></div>
-                      <div style={{ fontSize:12, color:'#888' }}>{new Date(s.submitted_at).toLocaleString()}</div>
-                      <div style={{ fontSize:14, color:'#185FA5', fontWeight:500, marginTop:2 }}>Score: {s.score} / 40</div>
-                    </div>
-                  ))}
-              </div>
-              <div className="card" style={{ marginTop: 0 }}>
-                <div style={{ fontWeight: 500, marginBottom: 10 }}>Writing ({writingSubs.length})</div>
-                {writingSubs.length === 0 ? <div style={{ color:'#888', fontSize:13 }}>No submissions yet.</div>
-                  : writingSubs.map((s,i) => (
-                    <div key={i} style={{ borderTop:'1px solid #eee', padding:'8px 0' }}>
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                        <div style={{ fontWeight:500, fontSize:13 }}>{s.full_name} <span style={{ color:'#888', fontWeight:400 }}>@{s.username}</span></div>
-                        <button className="btn btn-green btn-sm" onClick={() => downloadPDF(s)}>PDF</button>
-                      </div>
-                      <div style={{ fontSize:12, color:'#888' }}>{new Date(s.submitted_at).toLocaleString()}</div>
-                      <div style={{ fontSize:12, color:'#888', marginTop:2 }}>T1: {wc(s.task1_answer)}w · T2: {wc(s.task2_answer)}w</div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          )}
+          {adminTab === 'submissions' && <SubmissionsPanel writingSubs={writingSubs} listeningSubs={listeningSubs} readingSubs={readingSubs} wc={wc} downloadPDF={downloadPDF} supabase={supabase} />}
         </div>
       )}
 
