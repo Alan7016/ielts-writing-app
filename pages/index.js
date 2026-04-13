@@ -451,11 +451,14 @@ export default function App() {
     }
   }, [screen, timerRunning])
 
-  // Listen for scores from iframe
+  // Listen for scores and writing from iframe
   useEffect(() => {
     function handleMessage(e) {
-      if (e.data && e.data.type === 'IELTS_SCORE') {
-        const { module, score, total } = e.data
+      if (!e.data) return
+
+      // Set 1: Listening/Reading scores
+      if (e.data.type === 'IELTS_SCORE') {
+        const { module, score } = e.data
         if (!currentUser) return
         if (module === 'listening') {
           supabase.from('listening_submissions').insert({ username: currentUser.username, full_name: currentUser.full_name, answers: {}, score })
@@ -464,6 +467,20 @@ export default function App() {
           supabase.from('reading_submissions').insert({ username: currentUser.username, full_name: currentUser.full_name, answers: {}, score })
           goWritingWarn()
         }
+      }
+
+      // Set 2: Writing submission from HTML iframe
+      if (e.data.type === 'IELTS_WRITING') {
+        const { task1, task2 } = e.data
+        if (!currentUser) return
+        supabase.from('set2_submissions').upsert({
+          username: currentUser.username,
+          full_name: currentUser.full_name,
+          writing_task1: task1,
+          writing_task2: task2,
+          completed_at: new Date().toISOString()
+        }, { onConflict: 'username' })
+        go('done')
       }
     }
     window.addEventListener('message', handleMessage)
