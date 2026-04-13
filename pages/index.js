@@ -111,12 +111,18 @@ function Set2AdminPanel() {
   const [subs, setSubs] = useState([])
   const [selected, setSelected] = useState(null)
   const [loaded, setLoaded] = useState(false)
-
-  const supabase_client = supabase
+  const [uploadedFiles, setUploadedFiles] = useState({ listening: false, reading: false, writing: false })
 
   async function load() {
-    const { data } = await supabase_client.from('set2_submissions').select('*').order('completed_at', { ascending: false })
+    const { data } = await supabase.from('set2_submissions').select('*').order('completed_at', { ascending: false })
     setSubs(data || [])
+    // Check which HTML files are already uploaded
+    const { data: htmlData } = await supabase.from('set2_html').select('id')
+    if (htmlData) {
+      const uploaded = {}
+      htmlData.forEach(h => { uploaded[h.id] = true })
+      setUploadedFiles(uploaded)
+    }
     setLoaded(true)
   }
 
@@ -126,8 +132,9 @@ function Set2AdminPanel() {
     const reader = new FileReader()
     reader.onload = async (e) => {
       const content = e.target.result
-      await supabase_client.from('set2_html').upsert({ id, content, updated_at: new Date().toISOString() })
-      setMsg(id + ' uploaded! ✓')
+      await supabase.from('set2_html').upsert({ id, content, updated_at: new Date().toISOString() })
+      setMsg(id.charAt(0).toUpperCase() + id.slice(1) + ' HTML uploaded! ✓')
+      setUploadedFiles(prev => ({ ...prev, [id]: true }))
       setUploading(false)
       setTimeout(() => setMsg(''), 3000)
     }
@@ -138,6 +145,8 @@ function Set2AdminPanel() {
 
   if (!loaded) return (
     <div className="card" style={{ marginTop: 0 }}>
+      <div style={{ fontWeight: 500, marginBottom: 12 }}>Set 2 Admin Panel</div>
+      <div style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>Load Set 2 data to upload HTML files and view student submissions.</div>
       <button className="btn btn-blue btn-sm" onClick={load}>Load Set 2 Data</button>
     </div>
   )
@@ -212,14 +221,23 @@ function Set2AdminPanel() {
     <div style={{ marginTop: 0 }}>
       {/* HTML Upload */}
       <div className="card" style={{ marginTop: 0 }}>
-        <div style={{ fontWeight: 500, marginBottom: 12 }}>Set 2 — Upload HTML files</div>
-        {msg && <div style={{ fontSize: 13, color: '#0F6E56', marginBottom: 10 }}>{msg}</div>}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {['listening','reading','writing'].map(id => (
-            <label key={id} style={{ display: 'inline-block', padding: '8px 16px', background: '#185FA5', color: '#fff', borderRadius: 8, cursor: uploading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 500, opacity: uploading ? 0.6 : 1 }}>
-              {uploading ? 'Uploading...' : 'Upload ' + id.charAt(0).toUpperCase() + id.slice(1) + ' HTML'}
-              <input type="file" accept=".html" style={{ display: 'none' }} onChange={e => uploadHtml(e.target.files[0], id)} disabled={uploading} />
-            </label>
+        <div style={{ fontWeight: 500, marginBottom: 4 }}>Set 2 — Upload HTML files</div>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>
+          Upload your Listening, Reading and Writing HTML files for Set 2. Students will see your exact HTML layout.
+        </div>
+        {msg && <div style={{ fontSize: 13, color: '#0F6E56', marginBottom: 10, background: '#E1F5EE', padding: '8px 12px', borderRadius: 8 }}>{msg}</div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+          {['listening', 'reading', 'writing'].map(id => (
+            <div key={id} style={{ background: '#f9f9f9', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6, textTransform: 'capitalize' }}>{id}</div>
+              {uploadedFiles[id] && (
+                <div style={{ fontSize: 11, color: '#0F6E56', marginBottom: 8 }}>✓ HTML uploaded and ready</div>
+              )}
+              <label style={{ display: 'inline-block', padding: '8px 14px', background: uploadedFiles[id] ? '#0F6E56' : '#185FA5', color: '#fff', borderRadius: 8, cursor: uploading ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 500, opacity: uploading ? 0.6 : 1 }}>
+                {uploading ? 'Uploading...' : uploadedFiles[id] ? 'Replace HTML' : 'Upload HTML'}
+                <input type="file" accept=".html" style={{ display: 'none' }} onChange={e => uploadHtml(e.target.files[0], id)} disabled={uploading} />
+              </label>
+            </div>
           ))}
         </div>
       </div>
@@ -522,7 +540,6 @@ export default function App() {
     const { data } = await supabase.from('tasks').select('*').eq('id', 1).single()
     if (!data || (!data.task1_instructions && !data.task2_prompt)) return setError('No writing tasks uploaded yet.')
 
-    // Check deadline — lock at midnight LOCAL time of the day tasks were uploaded
     if (data.updated_at) {
       const uploadDate = new Date(data.updated_at)
       const deadline = new Date(uploadDate.getFullYear(), uploadDate.getMonth(), uploadDate.getDate(), 23, 59, 59, 999)
@@ -530,7 +547,6 @@ export default function App() {
       if (now > deadline) return setError('The deadline for this writing task has passed (midnight on ' + deadline.toLocaleDateString() + ').')
     }
 
-    // Check if student already submitted with actual content
     try {
       const { data: subs } = await supabase.from('submissions')
         .select('id, task1_answer, task2_answer, submitted_at')
@@ -555,7 +571,6 @@ export default function App() {
     examStartTimeRef.current = Date.now()
     elapsedRef.current = 0
     setTimeLeft(3600); setWritingPart(1); setTimerRunning(true); go('writing-exam')
-    // Request fullscreen
     try {
       const el = document.documentElement
       if (el.requestFullscreen) el.requestFullscreen()
@@ -568,11 +583,9 @@ export default function App() {
     submittedRef.current = true
     clearInterval(timerRef.current); setTimerRunning(false); setShowConfirm(false)
     
-    // Get latest answers from refs, state, or localStorage backup
     let t1 = ans1Ref.current || ans1
     let t2 = ans2Ref.current || ans2
     
-    // If both empty, try localStorage backup
     if (!t1 && !t2 && currentUser) {
       try {
         const backup = localStorage.getItem('ielts_autosave_' + currentUser.username)
@@ -595,7 +608,6 @@ export default function App() {
       alert('Error saving: ' + error.message + '. Screenshot your work and send to teacher!')
       return
     }
-    // Clear backup after successful save
     try { localStorage.removeItem('ielts_autosave_' + currentUser.username) } catch(e) {}
     go('done')
   }
@@ -754,7 +766,6 @@ export default function App() {
     setSaveMsg('Section ' + (idx+1) + ' audio uploaded!'); setTimeout(() => setSaveMsg(''), 3000)
   }
 
-  // HTML Upload functions
   async function uploadHtmlFile(file, module) {
     if (!file) return
     setHtmlUploading(true)
@@ -762,7 +773,6 @@ export default function App() {
     const fileName = module + '_' + Date.now() + '.html'
     const { error } = await supabase.storage.from('html-tests').upload(fileName, file, { upsert: true, contentType: 'text/html' })
     if (error) {
-      // Try uploading as text
       const reader = new FileReader()
       reader.onload = async (e) => {
         const htmlContent = e.target.result
@@ -1080,7 +1090,6 @@ export default function App() {
             onLoad={() => {
               const iframe = document.getElementById('listening-iframe')
               if (iframe && iframe.contentDocument) {
-                // Inject score capture
                 const script = iframe.contentDocument.createElement('script')
                 script.textContent = `window.addEventListener('message', function(){});`
                 iframe.contentDocument.body.appendChild(script)
@@ -1216,10 +1225,27 @@ export default function App() {
             </div>
           </div>
 
-          {/* Admin tabs */}
-          <div style={{ display: 'flex', gap: 4, background: '#fff', border: '1px solid #eee', borderRadius: 10, padding: 4, marginBottom: 12 }}>
-            {['writing','listening','reading','submissions'].map(t => (
-              <button key={t} onClick={() => setAdminTab(t)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: 7, background: adminTab===t?'#185FA5':'transparent', color: adminTab===t?'#fff':'#888', fontWeight: adminTab===t?500:400, fontSize: 13, cursor: 'pointer', textTransform: 'capitalize', fontFamily: 'inherit' }}>{t}</button>
+          {/* ── Admin tabs ── */}
+          <div style={{ display: 'flex', gap: 4, background: '#fff', border: '1px solid #eee', borderRadius: 10, padding: 4, marginBottom: 12, overflowX: 'auto' }}>
+            {[
+              { id: 'writing',     label: 'Writing'     },
+              { id: 'listening',   label: 'Listening'   },
+              { id: 'reading',     label: 'Reading'     },
+              { id: 'set2',        label: '★ Set 2'     },
+              { id: 'submissions', label: 'Submissions' },
+            ].map(t => (
+              <button
+                key={t.id}
+                onClick={() => setAdminTab(t.id)}
+                style={{
+                  flex: 1, padding: '8px', border: 'none', borderRadius: 7,
+                  background: adminTab === t.id ? (t.id === 'set2' ? '#0F6E56' : '#185FA5') : 'transparent',
+                  color: adminTab === t.id ? '#fff' : '#888',
+                  fontWeight: adminTab === t.id ? 500 : 400,
+                  fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+                  whiteSpace: 'nowrap',
+                }}
+              >{t.label}</button>
             ))}
           </div>
 
