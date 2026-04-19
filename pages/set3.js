@@ -16,19 +16,22 @@ export default function Set3() {
   const go = (s) => { setScreen(s); setError('') }
 
   useEffect(() => {
-    const saved = localStorage.getItem('ielts_user')
-    if (!saved) { window.location.href = '/'; return }
-    const user = JSON.parse(saved)
-    if (user.isAdmin) { window.location.href = '/'; return }
-    setCurrentUser(user)
-    // Check existing progress
-    const { data: existing } = await supabase.from('set3_submissions').select('*').eq('username', user.username).single()
-    if (existing) {
-      if (existing.listening_score != null) setListeningDone(true)
-      if (existing.reading_score != null) setReadingDone(true)
-      if (existing.writing_task1) setWritingDone(true)
+    async function init() {
+      const saved = localStorage.getItem('ielts_user')
+      if (!saved) { window.location.href = '/'; return }
+      const user = JSON.parse(saved)
+      if (user.isAdmin) { window.location.href = '/'; return }
+      setCurrentUser(user)
+      // Check existing progress
+      const { data: existing } = await supabase.from('set3_submissions').select('*').eq('username', user.username).single()
+      if (existing) {
+        if (existing.listening_score != null) setListeningDone(true)
+        if (existing.reading_score != null) setReadingDone(true)
+        if (existing.writing_task1) setWritingDone(true)
+      }
+      setScreen('home')
     }
-    setScreen('home')
+    init()
   }, [])
 
   // Listen for postMessage from iframes
