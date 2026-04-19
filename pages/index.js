@@ -105,6 +105,183 @@ function downloadPDF(sub) {
   win.onload = () => { win.print(); URL.revokeObjectURL(url) }
 }
 
+
+function Set3AdminPanel() {
+  const [uploading, setUploading] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [subs, setSubs] = useState([])
+  const [selected, setSelected] = useState(null)
+  const [loaded, setLoaded] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState({ listening: false, reading: false, writing: false })
+
+  async function load() {
+    const { data } = await supabase.from('set3_submissions').select('*').order('completed_at', { ascending: false })
+    setSubs(data || [])
+    const { data: htmlData } = await supabase.from('set3_html').select('id')
+    if (htmlData) {
+      const uploaded = {}
+      htmlData.forEach(h => { uploaded[h.id] = true })
+      setUploadedFiles(uploaded)
+    }
+    setLoaded(true)
+  }
+
+  async function uploadHtml(file, id) {
+    if (!file) return
+    setUploading(true); setMsg('Uploading ' + id + '...')
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const content = e.target.result
+      await supabase.from('set3_html').upsert({ id, content, updated_at: new Date().toISOString() })
+      setMsg(id.charAt(0).toUpperCase() + id.slice(1) + ' HTML uploaded! ✓')
+      setUploadedFiles(prev => ({ ...prev, [id]: true }))
+      setUploading(false)
+      setTimeout(() => setMsg(''), 3000)
+    }
+    reader.readAsText(file)
+  }
+
+  const wc = (t) => t ? t.trim().split(/\s+/).filter(Boolean).length : 0
+
+  function calcBand(s, type) {
+    if (type === 'listening') {
+      if(s>=39) return 9; if(s>=37) return 8.5; if(s>=35) return 8; if(s>=32) return 7.5;
+      if(s>=30) return 7; if(s>=26) return 6.5; if(s>=23) return 6; if(s>=18) return 5.5;
+      if(s>=16) return 5; if(s>=13) return 4.5; if(s>=10) return 4; if(s>=8) return 3.5;
+      if(s>=6) return 3; if(s>=4) return 2.5; if(s>=2) return 2; if(s===1) return 1.5; return 0;
+    } else {
+      const m = {40:9,39:9,38:8.5,37:8.5,36:8,35:8,34:7.5,33:7.5,32:7,31:7,30:7,29:6.5,28:6.5,27:6.5,26:6,25:6,24:6,23:5.5,22:5.5,21:5.5,20:5.5,19:5,18:5,17:5,16:5,15:4.5,14:4.5,13:4.5,12:4,11:4,10:3.5,9:3.5,8:3,7:3,6:2.5,5:2.5}
+      if(s<=0) return 0; if(s===1) return 1; if(s<=3) return 2; if(s<=5) return 2.5; return m[s]||0;
+    }
+  }
+
+  if (!loaded) return (
+    <div className="card" style={{ marginTop: 0 }}>
+      <div style={{ fontWeight: 500, marginBottom: 12 }}>Set 3 Admin Panel</div>
+      <div style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>Load Set 3 data to upload HTML files and view student submissions.</div>
+      <button className="btn btn-blue btn-sm" onClick={load}>Load Set 3 Data</button>
+    </div>
+  )
+
+  if (selected) {
+    const lBand = selected.listening_score != null ? calcBand(selected.listening_score, 'listening') : null
+    const rBand = selected.reading_score != null ? calcBand(selected.reading_score, 'reading') : null
+    return (
+      <div className="card" style={{ marginTop: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ fontWeight: 500, fontSize: 15 }}>{selected.full_name} <span style={{ color: '#888', fontWeight: 400, fontSize: 13 }}>@{selected.username}</span></div>
+          <button className="btn btn-sm" onClick={() => setSelected(null)}>← Back</button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
+            <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6 }}>Listening</div>
+            {selected.listening_score != null
+              ? <div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#185FA5' }}>{selected.listening_score}<span style={{ fontSize: 14, color: '#888' }}>/40</span></div>
+                  <div style={{ fontSize: 13, color: '#0F6E56', fontWeight: 500 }}>Band {lBand}</div>
+                  {selected.listening_results && selected.listening_results.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>Question breakdown:</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 3 }}>
+                        {selected.listening_results.map((r, i) => (
+                          <div key={i} title={r.isCorrect ? `Q${r.question}: ✓` : `Q${r.question}: wrote "${r.userAnswer}" — correct: "${r.correctAnswer}"`}
+                            style={{ background: r.isCorrect ? '#E1F5EE' : '#FEF2F2', border: '1px solid ' + (r.isCorrect ? '#9FE1CB' : '#FCA5A5'), borderRadius: 4, padding: '4px 2px', textAlign: 'center', fontSize: 10, cursor: 'default' }}>
+                            <div style={{ fontWeight: 600 }}>{r.question}</div>
+                            <div style={{ color: r.isCorrect ? '#0F6E56' : '#A32D2D' }}>{r.isCorrect ? '✓' : '✗'}</div>
+                            {!r.isCorrect && <div style={{ fontSize: 9, color: '#A32D2D', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.userAnswer || '—'}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              : <div style={{ fontSize: 13, color: '#888' }}>Not submitted</div>}
+          </div>
+          <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
+            <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6 }}>Reading</div>
+            {selected.reading_score != null
+              ? <div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#185FA5' }}>{selected.reading_score}<span style={{ fontSize: 14, color: '#888' }}>/40</span></div>
+                  <div style={{ fontSize: 13, color: '#0F6E56', fontWeight: 500 }}>Band {rBand}</div>
+                  {selected.reading_results && selected.reading_results.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>Question breakdown:</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 3 }}>
+                        {selected.reading_results.map((r, i) => (
+                          <div key={i} title={r.isCorrect ? `Q${r.question}: ✓` : `Q${r.question}: wrote "${r.userAnswer}" — correct: "${r.correctAnswer}"`}
+                            style={{ background: r.isCorrect ? '#E1F5EE' : '#FEF2F2', border: '1px solid ' + (r.isCorrect ? '#9FE1CB' : '#FCA5A5'), borderRadius: 4, padding: '4px 2px', textAlign: 'center', fontSize: 10, cursor: 'default' }}>
+                            <div style={{ fontWeight: 600 }}>{r.question}</div>
+                            <div style={{ color: r.isCorrect ? '#0F6E56' : '#A32D2D' }}>{r.isCorrect ? '✓' : '✗'}</div>
+                            {!r.isCorrect && <div style={{ fontSize: 9, color: '#A32D2D', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.userAnswer || '—'}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              : <div style={{ fontSize: 13, color: '#888' }}>Not submitted</div>}
+          </div>
+        </div>
+        <div className="card" style={{ marginTop: 0, marginBottom: 12 }}>
+          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Writing — Task 1 <span style={{ color: '#888', fontWeight: 400 }}>({wc(selected.writing_task1)} words)</span></div>
+          <div style={{ fontSize: 13, lineHeight: 1.8, background: '#f9f9f9', borderRadius: 8, padding: 12, whiteSpace: 'pre-wrap', maxHeight: 250, overflowY: 'auto' }}>
+            {selected.writing_task1 || <span style={{ color: '#aaa' }}>Not submitted</span>}
+          </div>
+        </div>
+        <div className="card" style={{ marginTop: 0 }}>
+          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Writing — Task 2 <span style={{ color: '#888', fontWeight: 400 }}>({wc(selected.writing_task2)} words)</span></div>
+          <div style={{ fontSize: 13, lineHeight: 1.8, background: '#f9f9f9', borderRadius: 8, padding: 12, whiteSpace: 'pre-wrap', maxHeight: 250, overflowY: 'auto' }}>
+            {selected.writing_task2 || <span style={{ color: '#aaa' }}>Not submitted</span>}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 0 }}>
+      <div className="card" style={{ marginTop: 0 }}>
+        <div style={{ fontWeight: 500, marginBottom: 4 }}>Set 3 — Upload HTML files</div>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>Upload your Listening, Reading and Writing HTML files for Set 3.</div>
+        {msg && <div style={{ fontSize: 13, color: '#0F6E56', marginBottom: 10, background: '#E1F5EE', padding: '8px 12px', borderRadius: 8 }}>{msg}</div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+          {['listening', 'reading', 'writing'].map(id => (
+            <div key={id} style={{ background: '#f9f9f9', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6, textTransform: 'capitalize' }}>{id}</div>
+              {uploadedFiles[id] && <div style={{ fontSize: 11, color: '#0F6E56', marginBottom: 8 }}>✓ HTML uploaded and ready</div>}
+              <label style={{ display: 'inline-block', padding: '8px 14px', background: uploadedFiles[id] ? '#0F6E56' : '#185FA5', color: '#fff', borderRadius: 8, cursor: uploading ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 500, opacity: uploading ? 0.6 : 1 }}>
+                {uploading ? 'Uploading...' : uploadedFiles[id] ? 'Replace HTML' : 'Upload HTML'}
+                <input type="file" accept=".html" style={{ display: 'none' }} onChange={e => uploadHtml(e.target.files[0], id)} disabled={uploading} />
+              </label>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="card">
+        <div style={{ fontWeight: 500, marginBottom: 12 }}>Set 3 Submissions ({subs.length})</div>
+        {subs.length === 0
+          ? <div style={{ fontSize: 13, color: '#888' }}>No submissions yet.</div>
+          : subs.map(s => (
+            <div key={s.id} onClick={() => setSelected(s)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', border: '1px solid #eee', borderRadius: 8, marginBottom: 6, cursor: 'pointer', background: '#fafafa' }}>
+              <div>
+                <div style={{ fontWeight: 500, fontSize: 14 }}>{s.full_name}</div>
+                <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                  {s.listening_score != null ? `L: ${s.listening_score}/40 (Band ${calcBand(s.listening_score,'listening')})` : 'L: —'}
+                  {' · '}
+                  {s.reading_score != null ? `R: ${s.reading_score}/40 (Band ${calcBand(s.reading_score,'reading')})` : 'R: —'}
+                  {' · '}
+                  {s.writing_task1 ? 'W: ✓' : 'W: —'}
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: '#185FA5' }}>View →</div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  )
+}
+
 function Set2AdminPanel() {
   const [uploading, setUploading] = useState(false)
   const [msg, setMsg] = useState('')
@@ -158,50 +335,75 @@ function Set2AdminPanel() {
         <button className="btn btn-sm" onClick={() => setSelected(null)}>← Back</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-        <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
-          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6 }}>Listening</div>
-          {selected.listening_score !== null
-            ? <div>
-                <div style={{ fontSize: 20, fontWeight: 600, color: '#185FA5' }}>{selected.listening_score}/40</div>
-                <div style={{ fontSize: 13, color: '#888' }}>Band {selected.listening_band}</div>
-              </div>
-            : <div style={{ fontSize: 13, color: '#888' }}>Not submitted</div>
+      {(() => {
+        function calcBand(s, type) {
+          if (type === 'listening') {
+            if(s>=39) return 9; if(s>=37) return 8.5; if(s>=35) return 8; if(s>=32) return 7.5;
+            if(s>=30) return 7; if(s>=26) return 6.5; if(s>=23) return 6; if(s>=18) return 5.5;
+            if(s>=16) return 5; if(s>=13) return 4.5; if(s>=10) return 4; if(s>=8) return 3.5;
+            if(s>=6) return 3; if(s>=4) return 2.5; if(s>=2) return 2; if(s===1) return 1.5; return 0;
+          } else {
+            const m = {40:9,39:9,38:8.5,37:8.5,36:8,35:8,34:7.5,33:7.5,32:7,31:7,30:7,29:6.5,28:6.5,27:6.5,26:6,25:6,24:6,23:5.5,22:5.5,21:5.5,20:5.5,19:5,18:5,17:5,16:5,15:4.5,14:4.5,13:4.5,12:4,11:4,10:3.5,9:3.5,8:3,7:3,6:2.5,5:2.5}
+            if(s<=0) return 0; if(s===1) return 1; if(s<=3) return 2; if(s<=5) return 2.5; return m[s]||0;
           }
-        </div>
-        <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
-          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6 }}>Reading</div>
-          {selected.reading_score !== null
-            ? <div>
-                <div style={{ fontSize: 20, fontWeight: 600, color: '#185FA5' }}>{selected.reading_score}/40</div>
-                <div style={{ fontSize: 13, color: '#888' }}>Band {selected.reading_band}</div>
-              </div>
-            : <div style={{ fontSize: 13, color: '#888' }}>Not submitted</div>
-          }
-        </div>
-      </div>
-
-      {selected.listening_results && selected.listening_results.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Listening — Question Breakdown</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
-            {selected.listening_results.map((r, i) => (
-              <div key={i} style={{ background: r.isCorrect ? '#E1F5EE' : '#FEF2F2', border: '1px solid ' + (r.isCorrect ? '#9FE1CB' : '#FCA5A5'), borderRadius: 6, padding: '6px 4px', textAlign: 'center', fontSize: 11 }}>
-                <div style={{ fontWeight: 600 }}>Q{r.question}</div>
-                <div style={{ color: r.isCorrect ? '#0F6E56' : '#A32D2D' }}>{r.isCorrect ? '✓' : '✗'}</div>
-                {!r.isCorrect && <div style={{ color: '#666', fontSize: 10 }}>{r.userAnswer || '—'}</div>}
-              </div>
-            ))}
+        }
+        const lBand = selected.listening_score != null ? calcBand(selected.listening_score, 'listening') : null
+        const rBand = selected.reading_score != null ? calcBand(selected.reading_score, 'reading') : null
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+            <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6 }}>Listening</div>
+              {selected.listening_score != null
+                ? <div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#185FA5' }}>{selected.listening_score}<span style={{ fontSize: 14, color: '#888' }}>/40</span></div>
+                    <div style={{ fontSize: 13, color: '#0F6E56', fontWeight: 500 }}>Band {lBand}</div>
+                    {selected.listening_results && selected.listening_results.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>Question breakdown:</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 3 }}>
+                          {selected.listening_results.map((r, i) => (
+                            <div key={i} title={r.isCorrect ? `Q${r.question}: ✓` : `Q${r.question}: You wrote "${r.userAnswer}" — correct: "${r.correctAnswer}"`}
+                              style={{ background: r.isCorrect ? '#E1F5EE' : '#FEF2F2', border: '1px solid ' + (r.isCorrect ? '#9FE1CB' : '#FCA5A5'), borderRadius: 4, padding: '4px 2px', textAlign: 'center', fontSize: 10, cursor: 'default' }}>
+                              <div style={{ fontWeight: 600 }}>{r.question}</div>
+                              <div style={{ color: r.isCorrect ? '#0F6E56' : '#A32D2D' }}>{r.isCorrect ? '✓' : '✗'}</div>
+                              {!r.isCorrect && <div style={{ fontSize: 9, color: '#A32D2D', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.userAnswer || '—'}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                : <div style={{ fontSize: 13, color: '#888' }}>Not submitted</div>
+              }
+            </div>
+            <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6 }}>Reading</div>
+              {selected.reading_score != null
+                ? <div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#185FA5' }}>{selected.reading_score}<span style={{ fontSize: 14, color: '#888' }}>/40</span></div>
+                    <div style={{ fontSize: 13, color: '#0F6E56', fontWeight: 500 }}>Band {rBand}</div>
+                    {selected.reading_results && selected.reading_results.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>Question breakdown:</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 3 }}>
+                          {selected.reading_results.map((r, i) => (
+                            <div key={i} title={r.isCorrect ? `Q${r.question}: ✓` : `Q${r.question}: You wrote "${r.userAnswer}" — correct: "${r.correctAnswer}"`}
+                              style={{ background: r.isCorrect ? '#E1F5EE' : '#FEF2F2', border: '1px solid ' + (r.isCorrect ? '#9FE1CB' : '#FCA5A5'), borderRadius: 4, padding: '4px 2px', textAlign: 'center', fontSize: 10, cursor: 'default' }}>
+                              <div style={{ fontWeight: 600 }}>{r.question}</div>
+                              <div style={{ color: r.isCorrect ? '#0F6E56' : '#A32D2D' }}>{r.isCorrect ? '✓' : '✗'}</div>
+                              {!r.isCorrect && <div style={{ fontSize: 9, color: '#A32D2D', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.userAnswer || '—'}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                : <div style={{ fontSize: 13, color: '#888' }}>Not submitted</div>
+              }
+            </div>
           </div>
-        </div>
-      )}
-
-      {selected.reading_results_html && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Reading — Question Breakdown</div>
-          <div style={{ fontSize: 12, maxHeight: 300, overflowY: 'auto', border: '1px solid #eee', borderRadius: 8, padding: 10 }} dangerouslySetInnerHTML={{ __html: selected.reading_results_html }} />
-        </div>
-      )}
+        )
+      })()}
 
       <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Writing — Task 1</div>
       <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 13, lineHeight: 1.7, marginBottom: 4, whiteSpace: 'pre-wrap', maxHeight: 250, overflowY: 'auto' }}>
@@ -269,11 +471,56 @@ function Set2AdminPanel() {
 }
 
 
+function bandFromListening(raw) {
+  if(raw>=39) return 9; if(raw>=37) return 8.5; if(raw>=35) return 8;
+  if(raw>=32) return 7.5; if(raw>=30) return 7; if(raw>=26) return 6.5;
+  if(raw>=23) return 6; if(raw>=18) return 5.5; if(raw>=16) return 5;
+  if(raw>=13) return 4.5; if(raw>=10) return 4; if(raw>=8) return 3.5;
+  if(raw>=6) return 3; if(raw>=4) return 2.5; if(raw>=2) return 2;
+  if(raw===1) return 1.5; return 0;
+}
+function bandFromReading(raw) {
+  const m = {40:9,39:9,38:8.5,37:8.5,36:8,35:8,34:7.5,33:7.5,32:7,31:7,30:7,29:6.5,28:6.5,27:6.5,26:6,25:6,24:6,23:5.5,22:5.5,21:5.5,20:5.5,19:5,18:5,17:5,16:5,15:4.5,14:4.5,13:4.5,12:4,11:4,10:3.5,9:3.5,8:3,7:3,6:2.5,5:2.5}
+  return m[raw] || 0;
+}
+
+function ScoreBreakdown({ results, module, onClose }) {
+  if (!results || results.length === 0) return (
+    <div style={{ padding: 16 }}>
+      <div style={{ fontSize: 13, color: '#888' }}>No detailed breakdown available.</div>
+      <button className="btn btn-sm" style={{ marginTop: 12 }} onClick={onClose}>Close</button>
+    </div>
+  )
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontWeight: 500, fontSize: 14 }}>{module} — Question Breakdown</div>
+        <button className="btn btn-sm" onClick={onClose}>Close</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 6 }}>
+        {results.map((r, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6, background: r.isCorrect ? '#E1F5EE' : '#FEF2F2', border: '1px solid ' + (r.isCorrect ? '#9FE1CB' : '#FCA5A5') }}>
+            <div style={{ fontWeight: 700, fontSize: 12, minWidth: 24, color: r.isCorrect ? '#0F6E56' : '#A32D2D' }}>Q{r.question}</div>
+            <div style={{ fontSize: 12, flex: 1 }}>
+              <div style={{ color: '#555' }}>Student: <strong>{r.userAnswer}</strong></div>
+              {!r.isCorrect && <div style={{ color: '#A32D2D' }}>Answer: <strong>{r.correctAnswer}</strong></div>}
+            </div>
+            <div style={{ fontSize: 14 }}>{r.isCorrect ? '✓' : '✗'}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function SubmissionsPanel({ writingSubs, listeningSubs, readingSubs, wc, downloadPDF, supabase }) {
   const [activeSet, setActiveSet] = useState('set1')
   const [set2subs, setSet2subs] = useState([])
   const [set2loaded, setSet2loaded] = useState(false)
+  const [set3subs, setSet3subs] = useState([])
+  const [set3loaded, setSet3loaded] = useState(false)
   const [selected, setSelected] = useState(null)
+  const [breakdown, setBreakdown] = useState(null) // { results, module }
 
   async function loadSet2() {
     const { data } = await supabase.from('set2_submissions').select('*').order('completed_at', { ascending: false })
@@ -281,16 +528,24 @@ function SubmissionsPanel({ writingSubs, listeningSubs, readingSubs, wc, downloa
     setSet2loaded(true)
   }
 
+  async function loadSet3() {
+    const { data } = await supabase.from('set3_submissions').select('*').order('completed_at', { ascending: false })
+    setSet3subs(data || [])
+    setSet3loaded(true)
+  }
+
   // Merge Set 1 data by username
   const set1students = {}
   listeningSubs.forEach(s => {
     if (!set1students[s.username]) set1students[s.username] = { username: s.username, full_name: s.full_name }
     set1students[s.username].listening_score = s.score
+    set1students[s.username].lResults = s.results || []
     set1students[s.username].listening_at = s.submitted_at
   })
   readingSubs.forEach(s => {
     if (!set1students[s.username]) set1students[s.username] = { username: s.username, full_name: s.full_name }
     set1students[s.username].reading_score = s.score
+    set1students[s.username].rResults = s.results || []
   })
   writingSubs.forEach(s => {
     if (!set1students[s.username]) set1students[s.username] = { username: s.username, full_name: s.full_name }
@@ -305,25 +560,28 @@ function SubmissionsPanel({ writingSubs, listeningSubs, readingSubs, wc, downloa
     const isSet2 = activeSet === 'set2'
     const t1 = isSet2 ? selected.writing_task1 : selected.task1
     const t2 = isSet2 ? selected.writing_task2 : selected.task2
-    const lScore = isSet2 ? selected.listening_score : selected.listening_score
-    const rScore = isSet2 ? selected.reading_score : selected.reading_score
+    const lScore = selected.listening_score != null ? selected.listening_score : null
+    const rScore = selected.reading_score != null ? selected.reading_score : null
     return (
       <div>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
           <div style={{ fontWeight:500, fontSize:15 }}>{selected.full_name} <span style={{ color:'#888', fontWeight:400, fontSize:13 }}>@{selected.username}</span></div>
           <button className="btn btn-sm" onClick={() => setSelected(null)}>← Back</button>
         </div>
+        {breakdown && <div className="card" style={{ marginTop:0, marginBottom:12, background:'#f9f9f9' }}><ScoreBreakdown results={breakdown.results} module={breakdown.module} onClose={() => setBreakdown(null)} /></div>}
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
-          <div className="card" style={{ marginTop:0, textAlign:'center' }}>
-            <div style={{ fontSize:12, color:'#888', marginBottom:4 }}>Listening</div>
+          <div className="card" style={{ marginTop:0, textAlign:'center', cursor: selected.lResults?.length ? 'pointer' : 'default' }} onClick={() => selected.lResults?.length && setBreakdown({ results: selected.lResults, module: 'Listening' })}>
+            <div style={{ fontSize:12, color:'#888', marginBottom:4 }}>Listening {selected.lResults?.length ? <span style={{ fontSize:11, color:'#185FA5' }}>· tap for breakdown</span> : ''}</div>
             {lScore != null
-              ? <div style={{ fontSize:24, fontWeight:700, color:'#185FA5' }}>{lScore}<span style={{ fontSize:14, color:'#888' }}>/40</span></div>
+              ? <div><div style={{ fontSize:24, fontWeight:700, color:'#185FA5' }}>{lScore}<span style={{ fontSize:14, color:'#888' }}>/40</span></div>
+                <div style={{ fontSize:13, color:'#0F6E56', fontWeight:500 }}>Band {bandFromListening(lScore)}</div></div>
               : <div style={{ fontSize:13, color:'#aaa' }}>—</div>}
           </div>
-          <div className="card" style={{ marginTop:0, textAlign:'center' }}>
-            <div style={{ fontSize:12, color:'#888', marginBottom:4 }}>Reading</div>
+          <div className="card" style={{ marginTop:0, textAlign:'center', cursor: selected.rResults?.length ? 'pointer' : 'default' }} onClick={() => selected.rResults?.length && setBreakdown({ results: selected.rResults, module: 'Reading' })}>
+            <div style={{ fontSize:12, color:'#888', marginBottom:4 }}>Reading {selected.rResults?.length ? <span style={{ fontSize:11, color:'#185FA5' }}>· tap for breakdown</span> : ''}</div>
             {rScore != null
-              ? <div style={{ fontSize:24, fontWeight:700, color:'#185FA5' }}>{rScore}<span style={{ fontSize:14, color:'#888' }}>/40</span></div>
+              ? <div><div style={{ fontSize:24, fontWeight:700, color:'#185FA5' }}>{rScore}<span style={{ fontSize:14, color:'#888' }}>/40</span></div>
+                <div style={{ fontSize:13, color:'#0F6E56', fontWeight:500 }}>Band {bandFromReading(rScore)}</div></div>
               : <div style={{ fontSize:13, color:'#aaa' }}>—</div>}
           </div>
         </div>
@@ -352,6 +610,7 @@ function SubmissionsPanel({ writingSubs, listeningSubs, readingSubs, wc, downloa
       <div style={{ display:'flex', gap:8, marginBottom:16 }}>
         <button onClick={() => setActiveSet('set1')} style={{ padding:'8px 20px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:500, background: activeSet==='set1'?'#185FA5':'#f0f0f0', color: activeSet==='set1'?'#fff':'#555' }}>Set 1</button>
         <button onClick={() => { setActiveSet('set2'); if(!set2loaded) loadSet2() }} style={{ padding:'8px 20px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:500, background: activeSet==='set2'?'#0F6E56':'#f0f0f0', color: activeSet==='set2'?'#fff':'#555' }}>Set 2</button>
+        <button onClick={() => { setActiveSet('set3'); if(!set3loaded) loadSet3() }} style={{ padding:'8px 20px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:500, background: activeSet==='set3'?'#0F6E56':'#f0f0f0', color: activeSet==='set3'?'#fff':'#555' }}>Set 3</button>
       </div>
 
       {/* SET 1 */}
@@ -375,6 +634,33 @@ function SubmissionsPanel({ writingSubs, listeningSubs, readingSubs, wc, downloa
                 <div style={{ fontSize:12, color:'#185FA5' }}>View →</div>
               </div>
             ))
+          }
+        </div>
+      )}
+
+      {/* SET 3 */}
+      {activeSet === 'set3' && (
+        <div className="card" style={{ marginTop:0 }}>
+          <div style={{ fontWeight:500, marginBottom:12 }}>Set 3 — Students ({set3subs.length})</div>
+          {!set3loaded
+            ? <div style={{ fontSize:13, color:'#888' }}>Loading...</div>
+            : set3subs.length === 0
+              ? <div style={{ fontSize:13, color:'#888' }}>No submissions yet.</div>
+              : set3subs.map((s,i) => (
+                <div key={i} onClick={() => setSelected(s)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 12px', border:'1px solid #eee', borderRadius:8, marginBottom:6, cursor:'pointer', background:'#fafafa' }}>
+                  <div>
+                    <div style={{ fontWeight:500, fontSize:14 }}>{s.full_name} <span style={{ color:'#888', fontWeight:400, fontSize:13 }}>@{s.username}</span></div>
+                    <div style={{ fontSize:12, color:'#888', marginTop:3 }}>
+                      {s.listening_score != null ? `L: ${s.listening_score}/40` : 'L: —'}
+                      {' · '}
+                      {s.reading_score != null ? `R: ${s.reading_score}/40` : 'R: —'}
+                      {' · '}
+                      {s.writing_task1 ? `W: ${wc(s.writing_task1)}+${wc(s.writing_task2)} words` : 'W: —'}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:12, color:'#0F6E56' }}>View →</div>
+                </div>
+              ))
           }
         </div>
       )}
@@ -599,13 +885,13 @@ export default function App() {
 
       // Set 1: Listening/Reading scores
       if (e.data.type === 'IELTS_SCORE') {
-        const { module, score } = e.data
+        const { module, score, results } = e.data
         if (!currentUser) return
         if (module === 'listening') {
-          supabase.from('listening_submissions').insert({ username: currentUser.username, full_name: currentUser.full_name, answers: {}, score })
+          supabase.from('listening_submissions').insert({ username: currentUser.username, full_name: currentUser.full_name, answers: {}, score, results: results || [] })
           go('reading-warn')
         } else if (module === 'reading') {
-          supabase.from('reading_submissions').insert({ username: currentUser.username, full_name: currentUser.full_name, answers: {}, score })
+          supabase.from('reading_submissions').insert({ username: currentUser.username, full_name: currentUser.full_name, answers: {}, score, results: results || [] })
           goWritingWarn()
         }
       }
@@ -622,6 +908,70 @@ export default function App() {
           completed_at: new Date().toISOString()
         }, { onConflict: 'username' })
         go('done')
+      }
+
+      // Set 3: Writing submission
+      if (e.data.type === 'IELTS_WRITING_S3') {
+        const { task1, task2 } = e.data
+        if (!currentUser) return
+        supabase.from('set3_submissions').upsert({
+          username: currentUser.username,
+          full_name: currentUser.full_name,
+          writing_task1: task1,
+          writing_task2: task2,
+          completed_at: new Date().toISOString()
+        }, { onConflict: 'username' })
+        go('done')
+      }
+
+      // Set 3: Listening/Reading scores
+      if (e.data.type === 'IELTS_SCORE_S3') {
+        const { module, score, results } = e.data
+        if (!currentUser) return
+        if (module === 'listening') {
+          supabase.from('set3_submissions').upsert({
+            username: currentUser.username,
+            full_name: currentUser.full_name,
+            listening_score: score,
+            listening_results: results || [],
+            completed_at: new Date().toISOString()
+          }, { onConflict: 'username' })
+          go('reading-warn')
+        } else if (module === 'reading') {
+          supabase.from('set3_submissions').upsert({
+            username: currentUser.username,
+            full_name: currentUser.full_name,
+            reading_score: score,
+            reading_results: results || [],
+            completed_at: new Date().toISOString()
+          }, { onConflict: 'username' })
+          goWritingWarn()
+        }
+      }
+
+      // Set 2: Listening/Reading scores with per-question breakdown
+      if (e.data.type === 'IELTS_SCORE') {
+        const { module, score, results } = e.data
+        if (!currentUser) return
+        if (module === 'listening') {
+          supabase.from('set2_submissions').upsert({
+            username: currentUser.username,
+            full_name: currentUser.full_name,
+            listening_score: score,
+            listening_results: results || [],
+            completed_at: new Date().toISOString()
+          }, { onConflict: 'username' })
+          go('reading-warn')
+        } else if (module === 'reading') {
+          supabase.from('set2_submissions').upsert({
+            username: currentUser.username,
+            full_name: currentUser.full_name,
+            reading_score: score,
+            reading_results: results || [],
+            completed_at: new Date().toISOString()
+          }, { onConflict: 'username' })
+          goWritingWarn()
+        }
       }
     }
     window.addEventListener('message', handleMessage)
@@ -1197,6 +1547,7 @@ export default function App() {
             </div>
             <div style={{ marginTop: 12 }}>
               <a href="/set2" style={{ display: 'inline-block', padding: '8px 18px', background: '#0F6E56', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, textDecoration: 'none' }}>Go to Set 2 →</a>
+              <a href="/set3" style={{ display: 'inline-block', padding: '8px 18px', background: '#185FA5', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, textDecoration: 'none', marginLeft: 8 }}>Go to Set 3 →</a>
             </div>
           </div>
           <div className="card">
@@ -1390,6 +1741,7 @@ export default function App() {
               { id: 'listening',   label: 'Listening'   },
               { id: 'reading',     label: 'Reading'     },
               { id: 'set2',        label: '★ Set 2'     },
+              { id: 'set3',        label: '★ Set 3'     },
               { id: 'submissions', label: 'Submissions' },
             ].map(t => (
               <button
@@ -1493,6 +1845,9 @@ export default function App() {
 
           {/* SET 2 TAB */}
           {adminTab === 'set2' && <Set2AdminPanel />}
+
+          {/* SET 3 TAB */}
+          {adminTab === 'set3' && <Set3AdminPanel />}
 
           {/* SUBMISSIONS TAB */}
           {adminTab === 'submissions' && <SubmissionsPanel writingSubs={writingSubs} listeningSubs={listeningSubs} readingSubs={readingSubs} wc={wc} downloadPDF={downloadPDF} supabase={supabase} />}
