@@ -896,6 +896,11 @@ export default function App() {
         }
       }
 
+      // Redirect after time's up in iframe
+      if (e.data.type === 'SET_REDIRECT') {
+        go(e.data.screen)
+      }
+
       // Set 2: Writing submission from HTML iframe
       if (e.data.type === 'IELTS_WRITING') {
         const { task1, task2 } = e.data
