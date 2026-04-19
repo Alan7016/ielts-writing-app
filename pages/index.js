@@ -1537,23 +1537,29 @@ export default function App() {
           </div>
 
           <div className="card" style={{ border: '2px solid #0F6E56', marginTop: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontWeight: 500, fontSize: 16 }}>Set 2 — Full Mock Test</div>
-                <div style={{ display: 'flex', gap: 6, margin: '8px 0', flexWrap: 'wrap' }}>
-                  <div style={{ background: '#E1F5EE', color: '#0F6E56', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Listening</div>
-                  <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
-                  <div style={{ background: '#E1F5EE', color: '#0F6E56', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Reading</div>
-                  <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
-                  <div style={{ background: '#E1F5EE', color: '#0F6E56', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Writing</div>
-                </div>
-                <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>Complete all three modules in order. Real mock conditions.</div>
-              </div>
+            <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 6 }}>Set 2 — Full Mock Test</div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+              <div style={{ background: '#E1F5EE', color: '#0F6E56', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Listening</div>
+              <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
+              <div style={{ background: '#E1F5EE', color: '#0F6E56', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Reading</div>
+              <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
+              <div style={{ background: '#E1F5EE', color: '#0F6E56', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Writing</div>
             </div>
-            <div style={{ marginTop: 12 }}>
-              <a href="/set2" style={{ display: 'inline-block', padding: '8px 18px', background: '#0F6E56', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, textDecoration: 'none' }}>Go to Set 2 →</a>
-              <a href="/set3" style={{ display: 'inline-block', padding: '8px 18px', background: '#185FA5', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, textDecoration: 'none', marginLeft: 8 }}>Go to Set 3 →</a>
+            <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6, marginBottom: 12 }}>Complete all three modules in order. Real mock conditions.</div>
+            <a href="/set2" style={{ display: 'inline-block', padding: '8px 18px', background: '#0F6E56', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, textDecoration: 'none' }}>Go to Set 2 →</a>
+          </div>
+
+          <div className="card" style={{ border: '2px solid #185FA5', marginTop: 12 }}>
+            <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 6 }}>Set 3 — Full Mock Test</div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Listening</div>
+              <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
+              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Reading</div>
+              <div style={{ color: '#888', fontSize: 12, display: 'flex', alignItems: 'center' }}>→</div>
+              <div style={{ background: '#EFF6FF', color: '#185FA5', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>Writing</div>
             </div>
+            <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6, marginBottom: 12 }}>Complete all three modules in order. Real mock conditions.</div>
+            <a href="/set3" style={{ display: 'inline-block', padding: '8px 18px', background: '#185FA5', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, textDecoration: 'none' }}>Go to Set 3 →</a>
           </div>
           <div className="card">
             <div style={{ fontWeight: 500, marginBottom: 10 }}>My submissions</div>
