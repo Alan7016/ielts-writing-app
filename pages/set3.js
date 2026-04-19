@@ -9,6 +9,9 @@ export default function Set3() {
   const [listeningData, setListeningData] = useState(null)
   const [readingData, setReadingData] = useState(null)
   const [writingData, setWritingData] = useState(null)
+  const [listeningDone, setListeningDone] = useState(false)
+  const [readingDone, setReadingDone] = useState(false)
+  const [writingDone, setWritingDone] = useState(false)
 
   const go = (s) => { setScreen(s); setError('') }
 
@@ -18,6 +21,13 @@ export default function Set3() {
     const user = JSON.parse(saved)
     if (user.isAdmin) { window.location.href = '/'; return }
     setCurrentUser(user)
+    // Check existing progress
+    const { data: existing } = await supabase.from('set3_submissions').select('*').eq('username', user.username).single()
+    if (existing) {
+      if (existing.listening_score != null) setListeningDone(true)
+      if (existing.reading_score != null) setReadingDone(true)
+      if (existing.writing_task1) setWritingDone(true)
+    }
     setScreen('home')
   }, [])
 
@@ -36,6 +46,7 @@ export default function Set3() {
             listening_results: results || [],
             completed_at: new Date().toISOString()
           }, { onConflict: 'username' })
+          setListeningDone(true)
           go('reading-warn')
         } else if (module === 'reading') {
           await supabase.from('set3_submissions').upsert({
@@ -45,6 +56,7 @@ export default function Set3() {
             reading_results: results || [],
             completed_at: new Date().toISOString()
           }, { onConflict: 'username' })
+          setReadingDone(true)
           go('writing-warn')
         }
       }
@@ -58,6 +70,7 @@ export default function Set3() {
           writing_task2: task2,
           completed_at: new Date().toISOString()
         }, { onConflict: 'username' })
+        setWritingDone(true)
         go('done')
       }
     }
@@ -74,6 +87,7 @@ export default function Set3() {
 
   async function goReadingWarn() {
     setError('')
+    if (!listeningDone) return setError('You must complete Listening before starting Reading.')
     const { data } = await supabase.from('set3_html').select('*').eq('id', 'reading').single()
     if (!data || !data.content) return setError('Reading test not uploaded yet. Ask your teacher.')
     setReadingData(data); go('reading-warn')
@@ -81,6 +95,7 @@ export default function Set3() {
 
   async function goWritingWarn() {
     setError('')
+    if (!readingDone) return setError('You must complete Reading before starting Writing.')
     const { data } = await supabase.from('set3_html').select('*').eq('id', 'writing').single()
     if (!data || !data.content) return setError('Writing test not uploaded yet. Ask your teacher.')
     setWritingData(data); go('writing-warn')
@@ -115,25 +130,37 @@ export default function Set3() {
             <a href="/" style={{ padding: '7px 14px', border: '1px solid #ddd', borderRadius: 8, fontSize: 13, color: '#111', textDecoration: 'none', background: '#fff' }}>← Home</a>
           </div>
 
-          {error && <div className="err">{error}</div>}
 
           <div className="card" style={{ marginTop: 8 }}>
             <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 4 }}>Welcome, {currentUser.full_name}</div>
             <div style={{ fontSize: 13, color: '#666', marginBottom: 16, lineHeight: 1.6 }}>Complete all three modules in order. Each module must be started and cannot be revisited.</div>
 
-            {[
-              { id: 'listening', label: 'Listening', desc: '40 questions · ~30 min', color: '#185FA5', action: goListeningWarn },
-              { id: 'reading',   label: 'Reading',   desc: '40 questions · 60 min', color: '#185FA5', action: goReadingWarn },
-              { id: 'writing',   label: 'Writing',   desc: 'Task 1 + Task 2 · 60 min', color: '#185FA5', action: goWritingWarn },
-            ].map((m, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderTop: i === 0 ? 'none' : '1px solid #eee' }}>
-                <div>
-                  <div style={{ fontWeight: 500, fontSize: 14 }}>{m.label}</div>
-                  <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{m.desc}</div>
+            {(() => {
+              const modules = [
+                { id: 'listening', label: 'Listening', desc: '40 questions · ~30 min', action: goListeningWarn, done: listeningDone, locked: false },
+                { id: 'reading',   label: 'Reading',   desc: '40 questions · 60 min', action: goReadingWarn,   done: readingDone,   locked: !listeningDone },
+                { id: 'writing',   label: 'Writing',   desc: 'Task 1 + Task 2 · 60 min', action: goWritingWarn, done: writingDone, locked: !readingDone },
+              ]
+              return modules.map((m, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderTop: i === 0 ? 'none' : '1px solid #eee' }}>
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {m.label}
+                      {m.done && <span style={{ fontSize: 11, background: '#E1F5EE', color: '#0F6E56', padding: '2px 8px', borderRadius: 10, fontWeight: 500 }}>✓ Done</span>}
+                      {m.locked && <span style={{ fontSize: 11, background: '#f5f5f5', color: '#aaa', padding: '2px 8px', borderRadius: 10 }}>🔒 Locked</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{m.desc}</div>
+                  </div>
+                  {m.done
+                    ? <div style={{ fontSize: 12, color: '#0F6E56', fontWeight: 500 }}>Completed ✓</div>
+                    : <button onClick={m.action} className="btn btn-sm" style={{ background: m.locked ? '#ccc' : '#185FA5', color: '#fff', border: 'none', cursor: m.locked ? 'not-allowed' : 'pointer' }} disabled={m.locked}>
+                        {m.locked ? '🔒 Locked' : 'Start →'}
+                      </button>
+                  }
                 </div>
-                <button onClick={m.action} className="btn btn-sm" style={{ background: m.color, color: '#fff', border: 'none' }}>Start →</button>
-              </div>
-            ))}
+              ))
+            })()}
+            {error && <div style={{ fontSize: 13, color: '#A32D2D', background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8, padding: '10px 14px', marginTop: 8 }}>{error}</div>}
           </div>
         </div>
       )}
