@@ -282,6 +282,272 @@ function Set3AdminPanel() {
   )
 }
 
+
+function DynamicSetAdminPanel({ setNumber }) {
+  const tableName = `set${setNumber}_submissions`
+  const htmlTable = `set${setNumber}_html`
+  const [uploading, setUploading] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [subs, setSubs] = useState([])
+  const [selected, setSelected] = useState(null)
+  const [loaded, setLoaded] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState({ listening: false, reading: false, writing: false })
+
+  async function load() {
+    const { data } = await supabase.from(tableName).select('*').order('completed_at', { ascending: false })
+    setSubs(data || [])
+    const { data: htmlData } = await supabase.from(htmlTable).select('id')
+    if (htmlData) {
+      const uploaded = {}
+      htmlData.forEach(h => { uploaded[h.id] = true })
+      setUploadedFiles(uploaded)
+    }
+    setLoaded(true)
+  }
+
+  async function uploadHtml(file, id) {
+    if (!file) return
+    setUploading(true); setMsg('Uploading ' + id + '...')
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      await supabase.from(htmlTable).upsert({ id, content: e.target.result, updated_at: new Date().toISOString() })
+      setMsg(id.charAt(0).toUpperCase() + id.slice(1) + ' HTML uploaded! ✓')
+      setUploadedFiles(prev => ({ ...prev, [id]: true }))
+      setUploading(false)
+      setTimeout(() => setMsg(''), 3000)
+    }
+    reader.readAsText(file)
+  }
+
+  const wc = (t) => t ? t.trim().split(/\s+/).filter(Boolean).length : 0
+
+  function calcBand(s, type) {
+    if (type === 'listening') {
+      if(s>=39) return 9; if(s>=37) return 8.5; if(s>=35) return 8; if(s>=32) return 7.5;
+      if(s>=30) return 7; if(s>=26) return 6.5; if(s>=23) return 6; if(s>=18) return 5.5;
+      if(s>=16) return 5; if(s>=13) return 4.5; if(s>=10) return 4; if(s>=8) return 3.5;
+      if(s>=6) return 3; if(s>=4) return 2.5; if(s>=2) return 2; if(s===1) return 1.5; return 0;
+    } else {
+      const m = {40:9,39:9,38:8.5,37:8.5,36:8,35:8,34:7.5,33:7.5,32:7,31:7,30:7,29:6.5,28:6.5,27:6.5,26:6,25:6,24:6,23:5.5,22:5.5,21:5.5,20:5.5,19:5,18:5,17:5,16:5,15:4.5,14:4.5,13:4.5,12:4,11:4,10:3.5,9:3.5,8:3,7:3,6:2.5,5:2.5}
+      if(s<=0) return 0; if(s===1) return 1; if(s<=3) return 2; if(s<=5) return 2.5; return m[s]||0;
+    }
+  }
+
+  if (!loaded) return (
+    <div className="card" style={{ marginTop: 0 }}>
+      <div style={{ fontWeight: 500, marginBottom: 12 }}>Set {setNumber} Admin Panel</div>
+      <div style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>Load data to upload HTML files and view student submissions.</div>
+      <button className="btn btn-blue btn-sm" onClick={load}>Load Set {setNumber} Data</button>
+    </div>
+  )
+
+  if (selected) {
+    const lBand = selected.listening_score != null ? calcBand(selected.listening_score, 'listening') : null
+    const rBand = selected.reading_score != null ? calcBand(selected.reading_score, 'reading') : null
+    return (
+      <div className="card" style={{ marginTop: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ fontWeight: 500, fontSize: 15 }}>{selected.full_name} <span style={{ color: '#888', fontWeight: 400, fontSize: 13 }}>@{selected.username}</span></div>
+          <button className="btn btn-sm" onClick={() => setSelected(null)}>← Back</button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
+            <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6 }}>Listening</div>
+            {selected.listening_score != null
+              ? <div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#185FA5' }}>{selected.listening_score}<span style={{ fontSize: 14, color: '#888' }}>/40</span></div>
+                  <div style={{ fontSize: 13, color: '#0F6E56', fontWeight: 500 }}>Band {lBand}</div>
+                  {selected.listening_results && selected.listening_results.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>Question breakdown:</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 3 }}>
+                        {selected.listening_results.map((r, i) => (
+                          <div key={i} title={r.isCorrect ? `Q${r.question}: ✓` : `Q${r.question}: wrote "${r.userAnswer}" — correct: "${r.correctAnswer}"`}
+                            style={{ background: r.isCorrect ? '#E1F5EE' : '#FEF2F2', border: '1px solid ' + (r.isCorrect ? '#9FE1CB' : '#FCA5A5'), borderRadius: 4, padding: '4px 2px', textAlign: 'center', fontSize: 10, cursor: 'default' }}>
+                            <div style={{ fontWeight: 600 }}>{r.question}</div>
+                            <div style={{ color: r.isCorrect ? '#0F6E56' : '#A32D2D' }}>{r.isCorrect ? '✓' : '✗'}</div>
+                            {!r.isCorrect && <div style={{ fontSize: 9, color: '#A32D2D', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.userAnswer || '—'}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              : <div style={{ fontSize: 13, color: '#888' }}>Not submitted</div>}
+          </div>
+          <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
+            <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6 }}>Reading</div>
+            {selected.reading_score != null
+              ? <div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#185FA5' }}>{selected.reading_score}<span style={{ fontSize: 14, color: '#888' }}>/40</span></div>
+                  <div style={{ fontSize: 13, color: '#0F6E56', fontWeight: 500 }}>Band {rBand}</div>
+                  {selected.reading_results && selected.reading_results.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>Question breakdown:</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 3 }}>
+                        {selected.reading_results.map((r, i) => (
+                          <div key={i} title={r.isCorrect ? `Q${r.question}: ✓` : `Q${r.question}: wrote "${r.userAnswer}" — correct: "${r.correctAnswer}"`}
+                            style={{ background: r.isCorrect ? '#E1F5EE' : '#FEF2F2', border: '1px solid ' + (r.isCorrect ? '#9FE1CB' : '#FCA5A5'), borderRadius: 4, padding: '4px 2px', textAlign: 'center', fontSize: 10, cursor: 'default' }}>
+                            <div style={{ fontWeight: 600 }}>{r.question}</div>
+                            <div style={{ color: r.isCorrect ? '#0F6E56' : '#A32D2D' }}>{r.isCorrect ? '✓' : '✗'}</div>
+                            {!r.isCorrect && <div style={{ fontSize: 9, color: '#A32D2D', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.userAnswer || '—'}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              : <div style={{ fontSize: 13, color: '#888' }}>Not submitted</div>}
+          </div>
+        </div>
+        <div className="card" style={{ marginTop: 0, marginBottom: 12 }}>
+          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Writing — Task 1 <span style={{ color: '#888', fontWeight: 400 }}>({wc(selected.writing_task1)} words)</span></div>
+          <div style={{ fontSize: 13, lineHeight: 1.8, background: '#f9f9f9', borderRadius: 8, padding: 12, whiteSpace: 'pre-wrap', maxHeight: 250, overflowY: 'auto' }}>
+            {selected.writing_task1 || <span style={{ color: '#aaa' }}>Not submitted</span>}
+          </div>
+        </div>
+        <div className="card" style={{ marginTop: 0 }}>
+          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8 }}>Writing — Task 2 <span style={{ color: '#888', fontWeight: 400 }}>({wc(selected.writing_task2)} words)</span></div>
+          <div style={{ fontSize: 13, lineHeight: 1.8, background: '#f9f9f9', borderRadius: 8, padding: 12, whiteSpace: 'pre-wrap', maxHeight: 250, overflowY: 'auto' }}>
+            {selected.writing_task2 || <span style={{ color: '#aaa' }}>Not submitted</span>}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 0 }}>
+      <div className="card" style={{ marginTop: 0 }}>
+        <div style={{ fontWeight: 500, marginBottom: 4 }}>Set {setNumber} — Upload HTML files</div>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.6 }}>Upload your Listening, Reading and Writing HTML files for Set {setNumber}.</div>
+        {msg && <div style={{ fontSize: 13, color: '#0F6E56', marginBottom: 10, background: '#E1F5EE', padding: '8px 12px', borderRadius: 8 }}>{msg}</div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+          {['listening', 'reading', 'writing'].map(id => (
+            <div key={id} style={{ background: '#f9f9f9', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6, textTransform: 'capitalize' }}>{id}</div>
+              {uploadedFiles[id] && <div style={{ fontSize: 11, color: '#0F6E56', marginBottom: 8 }}>✓ Uploaded and ready</div>}
+              <label style={{ display: 'inline-block', padding: '8px 14px', background: uploadedFiles[id] ? '#0F6E56' : '#185FA5', color: '#fff', borderRadius: 8, cursor: uploading ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 500, opacity: uploading ? 0.6 : 1 }}>
+                {uploading ? 'Uploading...' : uploadedFiles[id] ? 'Replace HTML' : 'Upload HTML'}
+                <input type="file" accept=".html" style={{ display: 'none' }} onChange={e => uploadHtml(e.target.files[0], id)} disabled={uploading} />
+              </label>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="card">
+        <div style={{ fontWeight: 500, marginBottom: 12 }}>Set {setNumber} Submissions ({subs.length})</div>
+        {subs.length === 0
+          ? <div style={{ fontSize: 13, color: '#888' }}>No submissions yet.</div>
+          : subs.map(s => (
+            <div key={s.id} onClick={() => setSelected(s)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', border: '1px solid #eee', borderRadius: 8, marginBottom: 6, cursor: 'pointer', background: '#fafafa' }}>
+              <div>
+                <div style={{ fontWeight: 500, fontSize: 14 }}>{s.full_name}</div>
+                <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                  {s.listening_score != null ? `L: ${s.listening_score}/40 (Band ${calcBand(s.listening_score,'listening')})` : 'L: —'}
+                  {' · '}
+                  {s.reading_score != null ? `R: ${s.reading_score}/40 (Band ${calcBand(s.reading_score,'reading')})` : 'R: —'}
+                  {' · '}
+                  {s.writing_task1 ? 'W: ✓' : 'W: —'}
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: '#185FA5' }}>View →</div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  )
+}
+
+
+function SetsManager() {
+  const SUPABASE_URL = 'https://dsitketafrgrcxpncsrb.supabase.co'
+  const SUPABASE_KEY = 'sb_publishable_Bo8TH5LcVGP-pCeAvflefg_IeepUKj_'
+  const [sets, setSets] = useState([])
+  const [activeSet, setActiveSet] = useState(null)
+  const [creating, setCreating] = useState(false)
+  const [createMsg, setCreateMsg] = useState('')
+  const [pendingSql, setPendingSql] = useState('')
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    loadSets()
+  }, [])
+
+  async function loadSets() {
+    // Get list of sets from set_registry table
+    const { data } = await supabase.from('set_registry').select('*').order('set_number', { ascending: true })
+    const setList = data || []
+    setSets(setList)
+    if (setList.length > 0 && !activeSet) setActiveSet(setList[0].set_number)
+    setLoaded(true)
+  }
+
+  async function createNewSet() {
+    setCreating(true)
+    setCreateMsg('Creating new set...')
+    const nextNumber = sets.length > 0 ? Math.max(...sets.map(s => s.set_number)) + 1 : 4
+
+    try {
+      // Step 1: Register the set
+      const { error: regErr } = await supabase.from('set_registry').insert({ set_number: nextNumber, created_at: new Date().toISOString() })
+      if (regErr) throw new Error(regErr.message)
+
+      // Step 2: Try inserting a dummy row to html table — if table doesn't exist Supabase returns error
+      // We create it by upserting — Supabase auto-creates via migrations won't work,
+      // so we show the teacher the SQL they need to run once
+      setCreateMsg(`Set ${nextNumber} registered! Now run this SQL in Supabase to finish setup:`)
+      setCreating(false)
+      setPendingSql(`create table if not exists set${nextNumber}_html (id text primary key, content text, updated_at timestamp default now());
+alter table set${nextNumber}_html enable row level security;
+create policy "allow all" on set${nextNumber}_html for all using (true) with check (true);
+
+create table if not exists set${nextNumber}_submissions (id bigserial primary key, username text, full_name text, listening_score int, listening_results jsonb, reading_score int, reading_results jsonb, writing_task1 text, writing_task2 text, completed_at timestamp default now());
+alter table set${nextNumber}_submissions enable row level security;
+create policy "allow all" on set${nextNumber}_submissions for all using (true) with check (true);
+alter table set${nextNumber}_submissions add constraint set${nextNumber}_sub_ukey unique (username);`)
+      await loadSets()
+      setActiveSet(nextNumber)
+      return
+    } catch(e) {
+      setCreateMsg('Error: ' + e.message)
+    }
+    setCreating(false)
+  }
+
+  if (!loaded) return <div style={{ fontSize: 13, color: '#888' }}>Loading sets...</div>
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        {sets.map(s => (
+          <button key={s.set_number} onClick={() => setActiveSet(s.set_number)}
+            style={{ padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 500,
+              background: activeSet === s.set_number ? '#0F6E56' : '#f0f0f0',
+              color: activeSet === s.set_number ? '#fff' : '#555' }}>
+            Set {s.set_number}
+          </button>
+        ))}
+        <button onClick={createNewSet} disabled={creating}
+          style={{ padding: '7px 16px', borderRadius: 8, border: '2px dashed #0F6E56', cursor: creating ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, background: 'transparent', color: '#0F6E56', opacity: creating ? 0.6 : 1 }}>
+          {creating ? 'Creating...' : '+ Add New Set'}
+        </button>
+        {createMsg && <span style={{ fontSize: 13, color: '#0F6E56' }}>{createMsg}</span>}
+      </div>
+      {pendingSql && (
+        <div className="card" style={{ marginTop: 0, marginBottom: 12, border: '1px solid #185FA5' }}>
+          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 8, color: '#185FA5' }}>⚡ One-time setup — run this in Supabase SQL Editor:</div>
+          <pre style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 11, overflowX: 'auto', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{pendingSql}</pre>
+          <button className="btn btn-sm btn-blue" style={{ marginTop: 8 }} onClick={() => { navigator.clipboard.writeText(pendingSql); }}>Copy SQL</button>
+          <button className="btn btn-sm" style={{ marginTop: 8, marginLeft: 8 }} onClick={() => setPendingSql('')}>Dismiss</button>
+        </div>
+      )}
+      {activeSet && <DynamicSetAdminPanel key={activeSet} setNumber={activeSet} />}
+    </div>
+  )
+}
+
 function Set2AdminPanel() {
   const [uploading, setUploading] = useState(false)
   const [msg, setMsg] = useState('')
@@ -1751,8 +2017,7 @@ export default function App() {
               { id: 'writing',     label: 'Writing'     },
               { id: 'listening',   label: 'Listening'   },
               { id: 'reading',     label: 'Reading'     },
-              { id: 'set2',        label: '★ Set 2'     },
-              { id: 'set3',        label: '★ Set 3'     },
+              { id: 'sets',        label: '★ Sets'      },
               { id: 'submissions', label: 'Submissions' },
             ].map(t => (
               <button
@@ -1760,7 +2025,7 @@ export default function App() {
                 onClick={() => setAdminTab(t.id)}
                 style={{
                   flex: 1, padding: '8px', border: 'none', borderRadius: 7,
-                  background: adminTab === t.id ? (t.id === 'set2' ? '#0F6E56' : '#185FA5') : 'transparent',
+                  background: adminTab === t.id ? (t.id === 'sets' ? '#0F6E56' : '#185FA5') : 'transparent',
                   color: adminTab === t.id ? '#fff' : '#888',
                   fontWeight: adminTab === t.id ? 500 : 400,
                   fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
@@ -1854,11 +2119,8 @@ export default function App() {
             </div>
           )}
 
-          {/* SET 2 TAB */}
-          {adminTab === 'set2' && <Set2AdminPanel />}
-
-          {/* SET 3 TAB */}
-          {adminTab === 'set3' && <Set3AdminPanel />}
+          {/* SETS TAB */}
+          {adminTab === 'sets' && <SetsManager />}
 
           {/* SUBMISSIONS TAB */}
           {adminTab === 'submissions' && <SubmissionsPanel writingSubs={writingSubs} listeningSubs={listeningSubs} readingSubs={readingSubs} wc={wc} downloadPDF={downloadPDF} supabase={supabase} />}
