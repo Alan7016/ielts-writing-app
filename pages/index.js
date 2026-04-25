@@ -461,6 +461,138 @@ function DynamicSetAdminPanel({ setNumber }) {
 }
 
 
+
+function DailyPracticeAdminPanel() {
+  const [activeType, setActiveType] = useState('listening')
+  const [uploading, setUploading] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [loaded, setLoaded] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState({ listening: false, reading: false })
+  const [subs, setSubs] = useState([])
+  const [selected, setSelected] = useState(null)
+
+  async function load() {
+    const { data: listData } = await supabase.from('daily_listening_submissions').select('*').order('completed_at', { ascending: false })
+    const { data: readData } = await supabase.from('daily_reading_submissions').select('*').order('completed_at', { ascending: false })
+    setSubs({ listening: listData || [], reading: readData || [] })
+    
+    const { data: htmlData } = await supabase.from('daily_listening_html').select('id')
+    const { data: readHtmlData } = await supabase.from('daily_reading_html').select('id')
+    const uploaded = { listening: !!htmlData?.length, reading: !!readHtmlData?.length }
+    setUploadedFiles(uploaded)
+    setLoaded(true)
+  }
+
+  async function uploadHtml(file, type) {
+    if (!file) return
+    setUploading(true); setMsg('Uploading ' + type + '...')
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const table = `daily_${type}_html`
+      await supabase.from(table).upsert({ id: type, content: e.target.result, updated_at: new Date().toISOString() })
+      setMsg(type.charAt(0).toUpperCase() + type.slice(1) + ' HTML uploaded! ✓')
+      setUploadedFiles(prev => ({ ...prev, [type]: true }))
+      setUploading(false)
+      setTimeout(() => setMsg(''), 3000)
+    }
+    reader.readAsText(file)
+  }
+
+  const wc = (t) => t ? t.trim().split(/\s+/).filter(Boolean).length : 0
+
+  function calcBand(s, type) {
+    if (type === 'listening') {
+      if(s>=39) return 9; if(s>=37) return 8.5; if(s>=35) return 8; if(s>=32) return 7.5;
+      if(s>=30) return 7; if(s>=26) return 6.5; if(s>=23) return 6; if(s>=18) return 5.5;
+      if(s>=16) return 5; if(s>=13) return 4.5; if(s>=10) return 4; if(s>=8) return 3.5;
+      if(s>=6) return 3; if(s>=4) return 2.5; if(s>=2) return 2; if(s===1) return 1.5; return 0;
+    } else {
+      const m = {40:9,39:9,38:8.5,37:8.5,36:8,35:8,34:7.5,33:7.5,32:7,31:7,30:7,29:6.5,28:6.5,27:6.5,26:6,25:6,24:6,23:5.5,22:5.5,21:5.5,20:5.5,19:5,18:5,17:5,16:5,15:4.5,14:4.5,13:4.5,12:4,11:4,10:3.5,9:3.5,8:3,7:3,6:2.5,5:2.5}
+      if(s<=0) return 0; if(s===1) return 1; if(s<=3) return 2; if(s<=5) return 2.5; return m[s]||0;
+    }
+  }
+
+  if (!loaded) return (
+    <div className="card" style={{ marginTop: 0 }}>
+      <div style={{ fontWeight: 500, marginBottom: 12 }}>Daily Practice Admin</div>
+      <button className="btn btn-blue btn-sm" onClick={load}>Load Daily Practice Data</button>
+    </div>
+  )
+
+  if (selected) {
+    const band = activeType === 'listening' ? calcBand(selected.score, 'listening') : calcBand(selected.score, 'reading')
+    return (
+      <div className="card" style={{ marginTop: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ fontWeight: 500, fontSize: 15 }}>{selected.full_name} <span style={{ color: '#888', fontWeight: 400, fontSize: 13 }}>@{selected.username}</span></div>
+          <button className="btn btn-sm" onClick={() => setSelected(null)}>← Back</button>
+        </div>
+        <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6 }}>{activeType === 'listening' ? 'Listening' : 'Reading'} Score</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: '#185FA5', marginBottom: 4 }}>{selected.score}<span style={{ fontSize: 14, color: '#888' }}>/40</span></div>
+          <div style={{ fontSize: 13, color: '#0F6E56', fontWeight: 500 }}>Band {band}</div>
+          {selected.results && selected.results.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>Question breakdown:</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 3 }}>
+                {selected.results.map((r, i) => (
+                  <div key={i} title={r.isCorrect ? `Q${r.question}: ✓` : `Q${r.question}: wrote "${r.userAnswer}" — correct: "${r.correctAnswer}"`}
+                    style={{ background: r.isCorrect ? '#E1F5EE' : '#FEF2F2', border: '1px solid ' + (r.isCorrect ? '#9FE1CB' : '#FCA5A5'), borderRadius: 4, padding: '4px 2px', textAlign: 'center', fontSize: 10, cursor: 'default' }}>
+                    <div style={{ fontWeight: 600 }}>{r.question}</div>
+                    <div style={{ color: r.isCorrect ? '#0F6E56' : '#A32D2D' }}>{r.isCorrect ? '✓' : '✗'}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const currentSubs = activeType === 'listening' ? (subs.listening || []) : (subs.reading || [])
+
+  return (
+    <div style={{ marginTop: 0 }}>
+      <div className="card" style={{ marginTop: 0 }}>
+        <div style={{ fontWeight: 500, marginBottom: 12 }}>Daily Practice — Upload HTML</div>
+        {msg && <div style={{ fontSize: 13, color: '#0F6E56', marginBottom: 10, background: '#E1F5EE', padding: '8px 12px', borderRadius: 8 }}>{msg}</div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+          {['listening', 'reading'].map(type => (
+            <div key={type} style={{ background: '#f9f9f9', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 6, textTransform: 'capitalize' }}>{type}</div>
+              {uploadedFiles[type] && <div style={{ fontSize: 11, color: '#0F6E56', marginBottom: 8 }}>✓ Uploaded</div>}
+              <label style={{ display: 'inline-block', padding: '8px 14px', background: uploadedFiles[type] ? '#0F6E56' : '#185FA5', color: '#fff', borderRadius: 8, cursor: uploading ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 500, opacity: uploading ? 0.6 : 1 }}>
+                {uploading ? 'Uploading...' : uploadedFiles[type] ? 'Replace HTML' : 'Upload HTML'}
+                <input type="file" accept=".html" style={{ display: 'none' }} onChange={e => uploadHtml(e.target.files[0], type)} disabled={uploading} />
+              </label>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="card">
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <button onClick={() => setActiveType('listening')} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, background: activeType==='listening'?'#185FA5':'#f0f0f0', color: activeType==='listening'?'#fff':'#555' }}>Listening</button>
+          <button onClick={() => setActiveType('reading')} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, background: activeType==='reading'?'#185FA5':'#f0f0f0', color: activeType==='reading'?'#fff':'#555' }}>Reading</button>
+        </div>
+        <div style={{ fontWeight: 500, marginBottom: 12 }}>Submissions ({currentSubs.length})</div>
+        {currentSubs.length === 0
+          ? <div style={{ fontSize: 13, color: '#888' }}>No submissions yet.</div>
+          : currentSubs.map(s => (
+            <div key={s.id} onClick={() => setSelected(s)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', border: '1px solid #eee', borderRadius: 8, marginBottom: 6, cursor: 'pointer', background: '#fafafa' }}>
+              <div>
+                <div style={{ fontWeight: 500, fontSize: 14 }}>{s.full_name}</div>
+                <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>Score: {s.score}/40 · Band {calcBand(s.score, activeType)}</div>
+              </div>
+              <div style={{ fontSize: 12, color: '#185FA5' }}>View →</div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  )
+}
+
 function SetsManager() {
   const SUPABASE_URL = 'https://dsitketafrgrcxpncsrb.supabase.co'
   const SUPABASE_KEY = 'sb_publishable_Bo8TH5LcVGP-pCeAvflefg_IeepUKj_'
@@ -1179,6 +1311,45 @@ export default function App() {
           completed_at: new Date().toISOString()
         }, { onConflict: 'username' })
         go('done')
+      }
+
+      // Set 4: Writing submission
+      if (e.data.type === 'IELTS_WRITING_S4') {
+        const { task1, task2 } = e.data
+        if (!currentUser) return
+        supabase.from('set4_submissions').upsert({
+          username: currentUser.username,
+          full_name: currentUser.full_name,
+          writing_task1: task1,
+          writing_task2: task2,
+          completed_at: new Date().toISOString()
+        }, { onConflict: 'username' })
+        go('done')
+      }
+
+      // Set 4: Listening/Reading scores
+      if (e.data.type === 'IELTS_SCORE_S4') {
+        const { module, score, results } = e.data
+        if (!currentUser) return
+        if (module === 'listening') {
+          supabase.from('set4_submissions').upsert({
+            username: currentUser.username,
+            full_name: currentUser.full_name,
+            listening_score: score,
+            listening_results: results || [],
+            completed_at: new Date().toISOString()
+          }, { onConflict: 'username' })
+          go('reading-warn')
+        } else if (module === 'reading') {
+          supabase.from('set4_submissions').upsert({
+            username: currentUser.username,
+            full_name: currentUser.full_name,
+            reading_score: score,
+            reading_results: results || [],
+            completed_at: new Date().toISOString()
+          }, { onConflict: 'username' })
+          goWritingWarn()
+        }
       }
 
       // Set 3: Writing submission
@@ -2121,6 +2292,9 @@ export default function App() {
 
           {/* SETS TAB */}
           {adminTab === 'sets' && <SetsManager />}
+
+          {/* DAILY PRACTICE TAB */}
+          {adminTab === 'daily' && <DailyPracticeAdminPanel />}
 
           {/* SUBMISSIONS TAB */}
           {adminTab === 'submissions' && <SubmissionsPanel writingSubs={writingSubs} listeningSubs={listeningSubs} readingSubs={readingSubs} wc={wc} downloadPDF={downloadPDF} supabase={supabase} />}
